@@ -1,4 +1,5 @@
-﻿using PlantConditionAnalyzer.Core.Models;
+﻿using PlantConditionAnalyzer.Core.Enums;
+using PlantConditionAnalyzer.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,6 +10,6 @@ namespace PlantConditionAnalyzer.Core.Interfaces
 {
     public interface IImageProcessingService
     {
-        ProcessingResult ProcessImage(string imagePath);
+        ProcessingResult ProcessImage(string imagePath, VegetationIndex vegetationIndex=VegetationIndex.ExG);
     }
 }

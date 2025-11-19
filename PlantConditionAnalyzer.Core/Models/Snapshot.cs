@@ -14,5 +14,8 @@ namespace PlantConditionAnalyzer.Core.Models
         public double ViMean { get; set; }
         public double ViStdDev { get; set; }
         public double PlantAreaPercentage { get; set; }
+        public double? SpadEstimate { get; set; }
+
+        public string VegetationIndexName { get; set; } = "ExG";
     }
 }

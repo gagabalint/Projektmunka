@@ -29,31 +29,14 @@ namespace PlantConditionAnalyzer.AvaloniaApp
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                // === ITT A VÁLTOZTATÁS ===
-                // Nem 'MainView'-t, hanem 'MainWindow'-t hozunk létre
+                
                 desktop.MainWindow = new MainWindow
                 {
-                    // És 'MainWindowViewModel'-t kérünk a DI-tõl
+                   
                     DataContext = Services.GetRequiredService<MainWindowViewModel>()
                 };
             }
-            // Az else if ág (singleViewPlatform) valószínûleg nem is kell
-            // egy asztali alkalmazásnál, de a biztonság kedvéért átírjuk azt is.
-            else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
-            {
-                // A sablonod valószínûleg nem generált 'MainView'-t,
-                // így ezt az ágat akár törölheted is, vagy
-                // átírhatod 'MainWindow'-ra, bár az nem UserControl.
-                // Egyelõre koncentráljunk a desktop.MainWindow-ra.
-
-                // Kommenteld ki ezt az ágat, ha nincs 'MainView'-d:
-                /*
-                singleViewPlatform.MainView = new MainView
-                {
-                    DataContext = Services.GetRequiredService<MainWindowViewModel>()
-                };
-                */
-            }
+           
 
             base.OnFrameworkInitializationCompleted();
         }
@@ -62,8 +45,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp
         {
             services.AddSingleton<IImageProcessingService, ImageProcessingService>();
 
-            // === ITT A VÁLTOZTATÁS ===
-            // Nem 'MainViewModel'-t, hanem 'MainWindowViewModel'-t regisztrálunk
+           
             services.AddTransient<MainWindowViewModel>();
         }
     }
