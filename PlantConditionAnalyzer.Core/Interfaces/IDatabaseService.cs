@@ -9,7 +9,12 @@ namespace PlantConditionAnalyzer.Core.Interfaces
 {
     public interface IDatabaseService
     {
+        Task InitializeAsync();
+
+        Task<List<CaptureSet>> GetCaptureSetsAsync();
+        Task<CaptureSet> CreateCaptureSetAsync(string name, string? description);
+        Task DeleteCaptureSetAsync(int id);
         Task SaveSnapshotAsync(Snapshot snapshot);
-        Task<List<Snapshot>> GetAllSnapshotsAsync();
+        Task<List<Snapshot>> GetSnapshotsForSetAsync(int captureSetId);
     }
 }
