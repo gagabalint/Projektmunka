@@ -44,7 +44,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp
         private void ConfigureServices(IServiceCollection services)
         {
             services.AddSingleton<IImageProcessingService, ImageProcessingService>();
-
+            services.AddSingleton<IDatabaseService,DatabaseService>();
            
             services.AddTransient<MainWindowViewModel>();
         }
