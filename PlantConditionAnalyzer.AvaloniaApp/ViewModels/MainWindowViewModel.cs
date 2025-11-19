@@ -1,12 +1,15 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using PlantConditionAnalyzer.Core.Enums;
 using PlantConditionAnalyzer.Core.Interfaces;
 using PlantConditionAnalyzer.Core.Models;
 using System;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -19,12 +22,14 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         // A 'Greeting' egy új tulajdonság, amit a 'ViewModelBase'-ből örökölt
         // 'ObservableObject' fog kezelni. A sablonodban a 'Greeting'
         // helyett lehet, hogy más van, azt átírhatod.
-        public string Greeting { get; }
+        private string? currentFilePath;
 
         public MainWindowViewModel(IImageProcessingService imageProcessor)
         {
             this.imageProcessor = imageProcessor;
-            statisticsText = "Válassz egy képet a feldolgozáshoz";
+            statisticsText = "Select an image to process";
+            var legendBytes = imageProcessor.GenerateColormapLegend();
+            ColormapLegend=ConvertBytesToBitmap(legendBytes);
         }
         [ObservableProperty]
         private Bitmap? originalImage;
@@ -38,51 +43,80 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         [ObservableProperty]
         private bool isProcessing=false;
 
+        [ObservableProperty]
+        private Bitmap? colormapLegend;
+
+        public ObservableCollection<VegetationIndex> AvailableIndices { get;  }=new ObservableCollection<VegetationIndex>(Enum.GetValues<VegetationIndex>());
+
+        [ObservableProperty]
+        private VegetationIndex selectedIndex = VegetationIndex.ExG;
+
+        async partial void OnSelectedIndexChanged(VegetationIndex value)
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                await ProcessCurrentFileAsync();
+            }
+        }
         [RelayCommand]
         private async Task LoadImageAsync()
         {
             if (IsProcessing) return;
             IsProcessing = true;
-            statisticsText = "Kép kiválasztása...";
+            StatisticsText = "Selecting image...";
 
             var file = await GetFilePickerAsync();
             if (file == null)
             {
-                isProcessing = false;
-                statisticsText = "Képkiválasztás megszakítva.";
+                IsProcessing = false;
+                StatisticsText = "Image selection cancelled.";
                 return;
             }
+
+            // Elmentjük az útvonalat
+            currentFilePath = file.Path.LocalPath;
+
+            // Megjelenítjük az eredetit
             await using (var stream = await file.OpenReadAsync())
             {
-                OriginalImage = new Bitmap(stream); 
+                OriginalImage = new Bitmap(stream);
             }
-            StatisticsText = "Kép feldolgozása...";
+
+            // Feldolgozzuk
+            await ProcessCurrentFileAsync();
+        }
+
+        private async Task ProcessCurrentFileAsync()
+        {
+            if (string.IsNullOrEmpty(currentFilePath)) return;
+
+            IsProcessing = true;
+            StatisticsText = $"Processing with {SelectedIndex}...";
             ProcessingResult? result = null;
 
-           
             await Task.Run(() =>
             {
                 try
                 {
-                    result = imageProcessor.ProcessImage(file.Path.LocalPath);
+                    // Átadjuk a kiválasztott indexet is!
+                    result = imageProcessor.ProcessImage(currentFilePath, SelectedIndex);
                 }
                 catch (Exception ex)
                 {
-                    StatisticsText = $"Hiba: {ex.Message}";
+                    StatisticsText = $"Error: {ex.Message}";
                 }
             });
 
-            if (result != null)
+            if (result != null && result.Statistics != null)
             {
                 ProcessedImage = ConvertBytesToBitmap(result.ProcessedImageBytes);
-                StatisticsText = $"Feldolgozás kész.\n" +
-                                 $"Átlag: {result.Statistics.ViMean:F2}\n" + 
-                                 $"Szórás: {result.Statistics.ViStdDev:F2}\n" +
-                                 $"Terület: {result.Statistics.PlantAreaPercentage:F1}%";
-
+                StatisticsText = $"Index: {result.Statistics.VegetationIndexName}\n" +
+                                 $"Mean: {result.Statistics.ViMean:F2}\n" +
+                                 $"StdDev: {result.Statistics.ViStdDev:F2}\n" +
+                                 $"Area: {result.Statistics.PlantAreaPercentage:F1}%";
             }
 
-            IsProcessing = false; 
+            IsProcessing = false;
         }
         private Bitmap? ConvertBytesToBitmap(byte[]? bytes)
         {
@@ -106,8 +140,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                 FileTypeFilter = new[] { FilePickerFileTypes.ImageAll }
             });
 
-            // Visszaadjuk az első kiválasztott fájlt (vagy null-t, ha nem választott)
-            return files.Count >= 1 ? files[0] : null;
+            return files.Count >=1 ? files[0]:null;
         }
     }
 }

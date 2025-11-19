@@ -12,14 +12,21 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 {
     public class ImageProcessingService : IImageProcessingService
     {
-        public ProcessingResult ProcessImage(string imagePath, VegetationIndex indexType)
+        public ProcessingResult ProcessImage(string imagePath, VegetationIndex indexType=VegetationIndex.ExG)
         {
-            using Mat original = Cv2.ImRead(imagePath, ImreadModes.Color);
+            using Mat rawOriginal = Cv2.ImRead(imagePath, ImreadModes.Color);
 
-            if (original.Empty())
+            if (rawOriginal.Empty())
             {
                 throw new Exception($"Cannot read image file: {imagePath}");
             }
+            return ProcessImage(rawOriginal, indexType);
+        }
+        public ProcessingResult ProcessImage(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
+        {
+           
+            using Mat original = ApplyROI(rawOriginal, 0.05);
+
             using Mat plantMask=GetSegmentationMask(original);
             using Mat rawIndexMap = CalculateIndexImage(original, indexType);
             using Mat normalizedIndexMap = new();
@@ -39,12 +46,16 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             // Összefésülés az eredetivel
             using Mat finalImage = new Mat();
-            Cv2.AddWeighted(original,1.0,heatmap,0.5,0,finalImage);
+            Cv2.AddWeighted(original,1.0,maskedHeatmap,0.5,0,finalImage);
 
-            // --- 7. STATISZTIKA & KIMENET ---
+
+            // NINCS HÁTTÉR
+            using Mat maskedOriginal = new Mat();
+            original.CopyTo(maskedOriginal, plantMask);
+            Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+
             double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / (plantMask.Rows * plantMask.Cols) * 100.0;
 
-            // Vitalitás statisztika (ExG értékek alapján, a végső maszkkal)
             Cv2.MeanStdDev(normalizedIndexMap, out Scalar meanVis, out Scalar stdVis, plantMask);
 
             var stats = new Snapshot
@@ -63,6 +74,25 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 ProcessedImageBytes = finalImage.ToBytes(".bmp"),
                 Statistics = stats
             };
+        }
+        public byte[] GenerateColormapLegend()
+        {
+            // 1. Létrehozunk egy 256 pixel széles, 1 pixel magas szürke gradienst (0..255)
+            using Mat gradient = new Mat(1, 256, MatType.CV_8U);
+            for (int i = 0; i < 256; i++)
+            {
+                gradient.Set<byte>(0, i, (byte)i);
+            }
+
+            // 2. Felnagyítjuk, hogy látható csík legyen (256x20 pixel)
+            using Mat resized = new Mat();
+            Cv2.Resize(gradient, resized, new Size(256, 20), 0, 0, InterpolationFlags.Nearest);
+
+            // 3. Rátesszük ugyanazt a TURBO színezést, amit a növényre is
+            using Mat colored = new Mat();
+            Cv2.ApplyColorMap(resized, colored, ColormapTypes.Turbo);
+
+            return colored.ToBytes(".bmp");
         }
         private Mat CalculateIndexImage(Mat original, VegetationIndex type)
         {
@@ -146,26 +176,31 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         }
         private Mat GetSegmentationMask(Mat original)
         {
-            using Mat preMask = new();
-            using Mat exg = CalculateIndexImage(original, VegetationIndex.ExG);
+            using Mat preMask = new Mat();
+            using Mat blurred = new Mat();
+            Cv2.GaussianBlur(original, blurred, new Size(5, 5), 0);
+            // 2. Előszegmentálás (ExG)
 
 
+            using (Mat exg = CalculateIndexImage(blurred, VegetationIndex.ExG))
             using (Mat exg8 = new Mat())
             {
-                Cv2.Normalize(exg, exg8, 0, 255, NormTypes.MinMax, MatType.CV_8U);//otsu miatt 8bitre valt
+                Cv2.Normalize(exg, exg8, 0, 255, NormTypes.MinMax, MatType.CV_8U);
                 Cv2.Threshold(exg8, preMask, 0, 255, ThresholdTypes.Otsu | ThresholdTypes.Binary);
             }
 
             if (IsMaskInverted(preMask)) Cv2.BitwiseNot(preMask, preMask);
 
 
+         
+            FilterSmallBlobs(preMask, 200);
+
 
             int totalPixels = preMask.Rows * preMask.Cols;
             int plantPixels = preMask.CountNonZero();
-            bool hasEnoughData = (plantPixels > (totalPixels * 0.01)) && (plantPixels < (totalPixels * 0.99));//ellenorizzuk, hogy a kep <99% nem noveny/hatter
 
            
-            if ((plantPixels > (totalPixels * 0.01)) && (plantPixels < (totalPixels * 0.99)))
+            if ((plantPixels < (totalPixels * 0.01)) || (plantPixels > (totalPixels * 0.99)))
             {
                  return preMask.Clone();
             }
@@ -174,60 +209,36 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             Cv2.CvtColor(original, labImage, ColorConversionCodes.BGR2Lab);
             Cv2.Split(labImage, out Mat[] labChannels);
             using Mat channelA = labChannels[1];
+            labChannels[0].Dispose();
+            labChannels[2].Dispose();
             using Mat bgMask = new();
             Cv2.BitwiseNot(preMask, bgMask);
 
             Cv2.MeanStdDev(channelA, out Scalar meanPlant, out Scalar stdPlant, preMask);
             Cv2.MeanStdDev(channelA, out Scalar meanBg, out Scalar stdBg, bgMask);
-            foreach (var c in labChannels) c.Dispose(); // A mentve, LAB torolheto
+
 
             double u_plant = meanPlant.Val0;
             double u_bg = meanBg.Val0;
-
+            // Ha túl közel vannak egymáshoz a színek, maradjunk az ExG-nél
+            if (Math.Abs(u_plant - u_bg) < 5.0)
+            {
+                return preMask.Clone();
+            }
             // Küszöb számítás
-            double thresholdValue = ((u_plant + stdPlant.Val0) + (u_bg - stdBg.Val0)) / 2.0;
-            if (u_plant > u_bg) thresholdValue = ((u_plant - stdPlant.Val0) + (u_bg + stdBg.Val0)) / 2.0;
+            double thresholdValue = ((meanPlant.Val0 + stdPlant.Val0) + (meanBg.Val0 - stdBg.Val0)) / 2.0;
+            if (u_plant > u_bg) thresholdValue = ((meanPlant.Val0 - stdPlant.Val0) + (meanBg.Val0 + stdBg.Val0)) / 2.0;
 
             Mat finalMask = new Mat();
             var type = u_plant < u_bg ? ThresholdTypes.BinaryInv : ThresholdTypes.Binary;
             Cv2.Threshold(channelA, finalMask, thresholdValue, 255, type);
 
+
+            FilterSmallBlobs(finalMask, 300);
+            using Mat kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
+            Cv2.MorphologyEx(finalMask, finalMask, MorphTypes.Close, kernel);
+
             return finalMask;
-        }
-        private Mat GetExGMask(Mat original)
-        {
-            Mat mask = new();
-            using Mat exgGray = GetExGImage(original);
-            Cv2.Threshold(exgGray, mask, 0, 255, ThresholdTypes.Otsu | ThresholdTypes.Binary);//otsu miatt a thresholdot maganak szamolja, majd binarisra
-            if (IsMaskInverted(mask))
-            {
-                Cv2.BitwiseNot(mask, mask); //megforditjuk, hogyha inverznek vettuk novenyzetet
-            }
-            return mask;
-        }
-        private Mat GetExGImage(Mat original)
-        {
-            Cv2.Split(original, out Mat[] channels);
-            using var b = channels[0];
-            using var g = channels[1];
-            using var r = channels[2];
-
-            using Mat b_16s = new();
-            using Mat g_16s = new();
-            using Mat r_16s = new();
-            b.ConvertTo(b_16s, MatType.CV_16S);
-            g.ConvertTo(g_16s, MatType.CV_16S);
-            r.ConvertTo(r_16s, MatType.CV_16S);
-
-            using Mat g_x2 = g_16s * 2;
-            using Mat temp = g_x2 - r_16s;
-            using Mat exg = temp - b_16s;
-
-            // Visszaalakítás 8 bitre 
-            Mat exg8 = new Mat();
-            Cv2.ConvertScaleAbs(exg, exg8);
-
-            return exg8;
         }
         private bool IsMaskInverted(Mat mask)
         {
@@ -238,6 +249,49 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             if (mask.At<byte>(mask.Rows - 1, mask.Cols - 1) > 0) isInvertedCorner++;
 
             return isInvertedCorner >= 3;
+        }
+        private void FilterSmallBlobs(Mat mask, double minArea)
+        {
+            // 1. Megkeressük az összes összefüggő alakzatot  a maszkon
+            Cv2.FindContours(mask, out Point[][] contours, out HierarchyIndex[] hierarchy,
+                RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+
+            foreach (var contour in contours)
+            {
+                // 3. Ha a területe kisebb, mint a limit...
+                double area = Cv2.ContourArea(contour);
+                if (area < minArea)
+                {
+                    // ...akkor feketére (0) színezzük a belsejét (eltüntetjük)
+                    // thickness: -1 jelenti a kitöltést
+                    Cv2.DrawContours(mask, new[] { contour }, -1, Scalar.Black, -1);
+                }
+            }
+        }
+        private Mat ApplyROI(Mat original, double marginPercent)
+        {
+            int marginX = (int)(original.Cols * marginPercent);
+            int marginY = (int)(original.Rows * marginPercent);
+
+            // Létrehozunk egy fekete maszkot
+            Mat roiMask = Mat.Zeros(original.Size(), MatType.CV_8U);
+
+            // A közepét fehérre festjük (ez a hasznos terület)
+            var roiRect = new Rect(
+                marginX,
+                marginY,
+                original.Cols - (2 * marginX),
+                original.Rows - (2 * marginY)
+            );
+
+            Cv2.Rectangle(roiMask, roiRect, Scalar.White, -1); // -1 = kitöltés
+
+            // Kivágjuk az eredeti képet ezzel a maszkkal
+            Mat cropped = new Mat();
+            // Ahol a maszk fekete, ott az eredmény is fekete lesz 
+            original.CopyTo(cropped, roiMask);
+
+            return cropped;
         }
     }
 }

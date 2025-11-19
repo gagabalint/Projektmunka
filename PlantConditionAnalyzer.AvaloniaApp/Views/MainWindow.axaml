@@ -8,60 +8,70 @@
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="Plant Condition Analyzer">
-  
-  <Design.DataContext>
-    <vm:MainWindowViewModel/>
-  </Design.DataContext>
 
-  <Grid RowDefinitions="Auto, *, Auto">
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
 
-    <Border Grid.Row="0" 
-            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
-            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" 
-            BorderThickness="0 0 0 1" 
-            Padding="10">
-      
-      <StackPanel Orientation="Horizontal" Margin="10" Spacing="10">
-        
-        <Button Content="Load and Process Image..."
-                Command="{Binding LoadImageCommand}"
-                IsEnabled="{Binding !IsProcessing}"/>
-        
-        <ProgressBar IsIndeterminate="True" 
-                     Width="150" 
-                     VerticalAlignment="Center"
-                     IsVisible="{Binding IsProcessing}"/>
-      </StackPanel>
-    </Border>
+    <Grid RowDefinitions="Auto, *, Auto">
 
-    <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="10">
-      
-      <Border Grid.Column="0" 
-              BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" 
-              BorderThickness="1" 
-              Padding="5"
-              Margin="5"> <Image Source="{Binding OriginalImage}" Stretch="Uniform"/>
-      </Border>
-
-      <Border Grid.Column="1" 
-              BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" 
-              BorderThickness="1" 
-              Padding="5"
-              Margin="5"> <Image Source="{Binding ProcessedImage}" Stretch="Uniform"/>
-      </Border>
-      
-    </Grid>
-    
-    <Border Grid.Row="2" 
-            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
-            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" 
-            BorderThickness="0 1 0 0" 
-            Padding="10">
+        <Border Grid.Row="0" 
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" 
+                BorderThickness="0 0 0 1" 
+                Padding="10">
             
-      <TextBlock Text="{Binding StatisticsText}"
-                 FontSize="14"
-                 FontWeight="SemiBold"/>
-    </Border>
+            <Grid ColumnDefinitions="Auto, *, Auto">
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                    <Button Content="Open Image..." 
+                            Command="{Binding LoadImageCommand}"
+                            IsEnabled="{Binding !IsProcessing}"/>
+                    
+                    <ComboBox ItemsSource="{Binding AvailableIndices}"
+                              SelectedItem="{Binding SelectedIndex}"
+                              IsEnabled="{Binding !IsProcessing}"
+                              Width="120"/>
 
-  </Grid>
+                    <ProgressBar IsIndeterminate="True" 
+                                 Width="100" 
+                                 VerticalAlignment="Center"
+                                 IsVisible="{Binding IsProcessing}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                    <TextBlock Text="Low" VerticalAlignment="Center" FontSize="11"/>
+                    
+                    <Border BorderBrush="Gray" BorderThickness="1">
+                        <Image Source="{Binding ColormapLegend}" Width="150" Height="15" Stretch="Fill"/>
+                    </Border>
+                    
+                    <TextBlock Text="High" VerticalAlignment="Center" FontSize="11"/>
+                </StackPanel>
+                
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="10">
+            <Border Grid.Column="0" 
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" 
+                    BorderThickness="1" Padding="5" Margin="5">
+                <Image Source="{Binding OriginalImage}" Stretch="Uniform"/>
+            </Border>
+
+            <Border Grid.Column="1" 
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" 
+                    BorderThickness="1" Padding="5" Margin="5">
+                <Image Source="{Binding ProcessedImage}" Stretch="Uniform"/>
+            </Border>
+        </Grid>
+        
+        <Border Grid.Row="2" 
+                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" 
+                BorderThickness="0 1 0 0" Padding="10">
+            <TextBlock Text="{Binding StatisticsText}" FontSize="14" FontWeight="SemiBold"/>
+        </Border>
+
+    </Grid>
 </Window>
