@@ -12,8 +12,8 @@ namespace PlantConditionAnalyzer.Core.Interfaces
 {
     public interface IImageProcessingService
     {
-        ProcessingResult ProcessImage(string imagePath, VegetationIndex vegetationIndex=VegetationIndex.ExG);
-        ProcessingResult ProcessImage(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG);
+        Task<ProcessingResult> ProcessImageAsync(string imagePath, VegetationIndex vegetationIndex=VegetationIndex.ExG);
+        Task<ProcessingResult> ProcessImageAsync(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG);
         byte[] GenerateColormapLegend();
     }
 }

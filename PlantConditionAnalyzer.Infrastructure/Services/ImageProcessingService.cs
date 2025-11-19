@@ -12,7 +12,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 {
     public class ImageProcessingService : IImageProcessingService
     {
-        public ProcessingResult ProcessImage(string imagePath, VegetationIndex indexType=VegetationIndex.ExG)
+        public async Task<ProcessingResult> ProcessImageAsync(string imagePath, VegetationIndex indexType = VegetationIndex.ExG)
         {
             using Mat rawOriginal = Cv2.ImRead(imagePath, ImreadModes.Color);
 
@@ -20,60 +20,62 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             {
                 throw new Exception($"Cannot read image file: {imagePath}");
             }
-            return ProcessImage(rawOriginal, indexType);
+            return await ProcessImageAsync(rawOriginal, indexType);
         }
-        public ProcessingResult ProcessImage(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
+        public async Task<ProcessingResult> ProcessImageAsync(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
         {
-           
-            using Mat original = ApplyROI(rawOriginal, 0.05);
-
-            using Mat plantMask=GetSegmentationMask(original);
-            using Mat rawIndexMap = CalculateIndexImage(original, indexType);
-            using Mat normalizedIndexMap = new();
-            Cv2.Normalize(rawIndexMap, normalizedIndexMap, 0, 255, NormTypes.MinMax, MatType.CV_8U);
-            
-
-
-
-           
-
-            using Mat heatmap = new Mat();
-            Cv2.ApplyColorMap(normalizedIndexMap, heatmap, ColormapTypes.Turbo);
-
-            // Maszkolás: Csak a növény maradjon színes
-            using Mat maskedHeatmap = Mat.Zeros(original.Size(), original.Type());
-            heatmap.CopyTo(maskedHeatmap, plantMask);
-
-            // Összefésülés az eredetivel
-            using Mat finalImage = new Mat();
-            Cv2.AddWeighted(original,1.0,maskedHeatmap,0.5,0,finalImage);
-
-
-            // NINCS HÁTTÉR
-            using Mat maskedOriginal = new Mat();
-            original.CopyTo(maskedOriginal, plantMask);
-            Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
-
-            double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / (plantMask.Rows * plantMask.Cols) * 100.0;
-
-            Cv2.MeanStdDev(normalizedIndexMap, out Scalar meanVis, out Scalar stdVis, plantMask);
-
-            var stats = new Snapshot
+            return await Task.Run(() =>
             {
-                Timestamp = DateTime.Now,
-                ImagePath = "n/a",
-                VegetationIndexName = indexType.ToString(),
-                ViMean = meanVis.Val0,
-                ViStdDev = stdVis.Val0,
-                PlantAreaPercentage = plantAreaPercentage,
-                SpadEstimate = null // Ezt majd egy külön szerviz/metódus számolja
-            };
+                using Mat original = ApplyROI(rawOriginal, 0.05);
 
-            return new ProcessingResult
-            {
-                ProcessedImageBytes = finalImage.ToBytes(".bmp"),
-                Statistics = stats
-            };
+                using Mat plantMask = GetSegmentationMask(original);
+                using Mat rawIndexMap = CalculateIndexImage(original, indexType);
+                using Mat normalizedIndexMap = new();
+                Cv2.Normalize(rawIndexMap, normalizedIndexMap, 0, 255, NormTypes.MinMax, MatType.CV_8U);
+
+
+
+
+
+
+                using Mat heatmap = new Mat();
+                Cv2.ApplyColorMap(normalizedIndexMap, heatmap, ColormapTypes.Turbo);
+
+                // Maszkolás: Csak a növény maradjon színes
+                using Mat maskedHeatmap = Mat.Zeros(original.Size(), original.Type());
+                heatmap.CopyTo(maskedHeatmap, plantMask);
+
+                // Összefésülés az eredetivel
+                using Mat finalImage = new Mat();
+               // Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+
+
+                // NINCS HÁTTÉR -- vagy ez vagy a felette levo
+                using Mat maskedOriginal = new Mat();
+                original.CopyTo(maskedOriginal, plantMask);
+                Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+
+                double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / (plantMask.Rows * plantMask.Cols) * 100.0;
+
+                Cv2.MeanStdDev(normalizedIndexMap, out Scalar meanVis, out Scalar stdVis, plantMask);
+
+                var stats = new Snapshot
+                {
+                    Timestamp = DateTime.Now,
+                    ImagePath = "n/a",
+                    VegetationIndexName = indexType.ToString(),
+                    ViMean = meanVis.Val0,
+                    ViStdDev = stdVis.Val0,
+                    PlantAreaPercentage = plantAreaPercentage,
+                    SpadEstimate = null // Ezt majd egy külön szerviz/metódus számolja
+                };
+
+                return new ProcessingResult
+                {
+                    ProcessedImageBytes = finalImage.ToBytes(".bmp"),
+                    Statistics = stats
+                };
+            });
         }
         public byte[] GenerateColormapLegend()
         {
@@ -192,17 +194,17 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             if (IsMaskInverted(preMask)) Cv2.BitwiseNot(preMask, preMask);
 
 
-         
+
             FilterSmallBlobs(preMask, 200);
 
 
             int totalPixels = preMask.Rows * preMask.Cols;
             int plantPixels = preMask.CountNonZero();
 
-           
+
             if ((plantPixels < (totalPixels * 0.01)) || (plantPixels > (totalPixels * 0.99)))
             {
-                 return preMask.Clone();
+                return preMask.Clone();
             }
 
             using Mat labImage = new();
