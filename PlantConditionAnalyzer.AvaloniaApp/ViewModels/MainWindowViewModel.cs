@@ -65,20 +65,9 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             var legendBytes = imageProcessor.GenerateColormapLegend();
             ColormapLegend = ConvertBytesToBitmap(legendBytes);
 
-            InitializeDatabase();
+            LoadProjectsAsync();
         }
-        private async void InitializeDatabase()
-        {
-            try
-            {
-                await databaseService.InitializeAsync();
-                await LoadProjectsAsync();
-            }
-            catch (Exception e)
-            {
-                StatusMessage = $"Database error: {e.Message}";
-            }
-        }
+        
         private async Task LoadProjectsAsync()
         {
             var sets = await databaseService.GetCaptureSetsAsync();

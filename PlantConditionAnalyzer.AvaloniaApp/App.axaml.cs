@@ -8,6 +8,7 @@ using PlantConditionAnalyzer.AvaloniaApp.ViewModels;
 using PlantConditionAnalyzer.AvaloniaApp.Views;
 using PlantConditionAnalyzer.Core.Interfaces;
 using PlantConditionAnalyzer.Infrastructure.Services;
+using System;
 using System.Linq;
 
 namespace PlantConditionAnalyzer.AvaloniaApp
@@ -26,6 +27,17 @@ namespace PlantConditionAnalyzer.AvaloniaApp
             var services = new ServiceCollection();
             ConfigureServices(services);
             Services = services.BuildServiceProvider();
+
+
+            try
+            {
+                var dbService = Services.GetRequiredService<IDatabaseService>();
+                dbService.InitializeAsync().GetAwaiter().GetResult(); // megvarjuk amig betolti a dbt
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"FATAL ERROR: Database init failed: {ex.Message}");
+            }
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
