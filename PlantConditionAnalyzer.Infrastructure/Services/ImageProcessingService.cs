@@ -14,30 +14,35 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
     {
         public async Task<ProcessingResult> ProcessImageAsync(string imagePath, VegetationIndex indexType = VegetationIndex.ExG)
         {
-            using Mat rawOriginal = Cv2.ImRead(imagePath, ImreadModes.Color);
+            return await Task.Run(() =>
+              {
+                  using Mat rawOriginal = Cv2.ImRead(imagePath, ImreadModes.Color);
 
-            if (rawOriginal.Empty())
-            {
-                throw new Exception($"Cannot read image file: {imagePath}");
-            }
-            return await ProcessImageAsync(rawOriginal, indexType);
+                  if (rawOriginal.Empty())
+                  {
+                      throw new Exception($"Cannot read image file: {imagePath}");
+                  }
+                  return ProcessMat(rawOriginal, indexType);
+              });
         }
-        public async Task<ProcessingResult> ProcessImageAsync(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
+        public async Task<ProcessingResult> ProcessImageAsync(Mat frame, VegetationIndex indexType = VegetationIndex.ExG)
         {
             return await Task.Run(() =>
             {
+                using Mat frameClone = frame.Clone();
+
+                return ProcessMat(frameClone, indexType);
+            });
+        }
+        private  ProcessingResult ProcessMat(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
+        {
+            
                 using Mat original = ApplyROI(rawOriginal, 0.05);
 
                 using Mat plantMask = GetSegmentationMask(original);
                 using Mat rawIndexMap = CalculateIndexImage(original, indexType);
                 using Mat normalizedIndexMap = new();
                 Cv2.Normalize(rawIndexMap, normalizedIndexMap, 0, 255, NormTypes.MinMax, MatType.CV_8U);
-
-
-
-
-
-
                 using Mat heatmap = new Mat();
                 Cv2.ApplyColorMap(normalizedIndexMap, heatmap, ColormapTypes.Turbo);
 
@@ -47,7 +52,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
                 // Összefésülés az eredetivel
                 using Mat finalImage = new Mat();
-               // Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+                // Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
 
 
                 // NINCS HÁTTÉR -- vagy ez vagy a felette levo
@@ -75,7 +80,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     ProcessedImageBytes = finalImage.ToBytes(".bmp"),
                     Statistics = stats
                 };
-            });
+           
         }
         public byte[] GenerateColormapLegend()
         {
@@ -88,7 +93,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             // 2. Felnagyítjuk, hogy látható csík legyen (256x20 pixel)
             using Mat resized = new Mat();
-            Cv2.Resize(gradient, resized, new Size(256, 20), 0, 0, InterpolationFlags.Nearest);
+            Cv2.Resize(gradient, resized, new Size(512, 30), 0, 0, InterpolationFlags.Nearest);
 
             // 3. Rátesszük ugyanazt a TURBO színezést, amit a növényre is
             using Mat colored = new Mat();
