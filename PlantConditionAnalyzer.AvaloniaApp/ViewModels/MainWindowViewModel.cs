@@ -18,19 +18,12 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
     public partial class MainWindowViewModel : ViewModelBase
     {
         private readonly IImageProcessingService imageProcessor;
+        private readonly IDatabaseService databaseService;
 
-        // A 'Greeting' egy új tulajdonság, amit a 'ViewModelBase'-ből örökölt
-        // 'ObservableObject' fog kezelni. A sablonodban a 'Greeting'
-        // helyett lehet, hogy más van, azt átírhatod.
+      
         private string? currentFilePath;
 
-        public MainWindowViewModel(IImageProcessingService imageProcessor)
-        {
-            this.imageProcessor = imageProcessor;
-            statisticsText = "Select an image to process";
-            var legendBytes = imageProcessor.GenerateColormapLegend();
-            ColormapLegend=ConvertBytesToBitmap(legendBytes);
-        }
+        
         [ObservableProperty]
         private Bitmap? originalImage;
 
@@ -45,12 +38,62 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
         [ObservableProperty]
         private Bitmap? colormapLegend;
-
-        public ObservableCollection<VegetationIndex> AvailableIndices { get;  }=new ObservableCollection<VegetationIndex>(Enum.GetValues<VegetationIndex>());
-
         [ObservableProperty]
         private VegetationIndex selectedIndex = VegetationIndex.ExG;
 
+        public ObservableCollection<VegetationIndex> AvailableIndices { get;  }=new ObservableCollection<VegetationIndex>(Enum.GetValues<VegetationIndex>());
+        public ObservableCollection<CaptureSet> Projects { get; } = new();
+
+        [ObservableProperty]
+        private CaptureSet? selectedProject;
+
+        [ObservableProperty]
+        private string newProjectName=string.Empty;
+
+        [ObservableProperty]
+        private string statusMessage = "Ready";
+
+        private ProcessingResult? lastResult;
+      
+        public MainWindowViewModel(IImageProcessingService imageProcessor, IDatabaseService databaseService)
+        {
+            this.imageProcessor = imageProcessor;
+            this.databaseService = databaseService;
+
+            statisticsText = "Select an image to process";
+
+            var legendBytes = imageProcessor.GenerateColormapLegend();
+            ColormapLegend = ConvertBytesToBitmap(legendBytes);
+
+            InitializeDatabase();
+        }
+        private async void InitializeDatabase()
+        {
+            try
+            {
+                await databaseService.InitializeAsync();
+                await LoadProjectsAsync();
+            }
+            catch (Exception e)
+            {
+                StatusMessage = $"Database error: {e.Message}";
+            }
+        }
+        private async Task LoadProjectsAsync()
+        {
+            var sets = await databaseService.GetCaptureSetsAsync();
+            Projects.Clear();
+            if (sets != null)
+            {
+                foreach (var item in sets)
+                {
+                    Projects.Add(item);
+                }
+                SelectedProject = Projects[0];
+            }
+
+
+        }
         async partial void OnSelectedIndexChanged(VegetationIndex value)
         {
             if (!string.IsNullOrEmpty(currentFilePath))
@@ -58,18 +101,71 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                 await ProcessCurrentFileAsync();
             }
         }
+
+        [RelayCommand]
+        private async Task CreateProjectAsync()
+        {
+            if (string.IsNullOrWhiteSpace(NewProjectName)) return;
+            CaptureSet newSet = await databaseService.CreateCaptureSetAsync(NewProjectName, null);
+            Projects.Insert(0,newSet);
+            SelectedProject = newSet;
+            NewProjectName = string.Empty;
+            StatusMessage = $"Project {newSet.Name} successfully created";
+        }
+
+        [RelayCommand]
+        private async Task SaveMeasurementAsync()
+        {
+            if (lastResult == null || SelectedProject == null)
+            {
+                StatusMessage = "No result to save or no project selected.";
+                return;
+            }
+            IsProcessing = true;
+            StatusMessage = "Saving";
+            try
+            {
+                string imagesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PlantConditionAnalyzer_Images");
+                if (!Directory.Exists(imagesDir))
+                {
+                    Directory.CreateDirectory(imagesDir);
+                }
+                string fileName = $"Img_{DateTime.Now:yyyyMMdd_HHmmss}_{SelectedProject.Id}.png";
+                string imgPath=Path.Combine(imagesDir, fileName);
+
+                if (lastResult.ProcessedImageBytes != null)
+                {
+                    await File.WriteAllBytesAsync(imgPath, lastResult.ProcessedImageBytes);
+                }
+                Snapshot snapshot = lastResult.Statistics!;
+                snapshot.ImagePath=imgPath;
+                snapshot.CaptureSetId = SelectedProject.Id;
+                await databaseService.SaveSnapshotAsync(snapshot);
+                StatusMessage = "Measurment saved succesfully";
+            }
+            catch (Exception e)
+            {
+                StatusMessage = $"Save Error: {e.Message}";
+            }
+            finally
+            {
+                IsProcessing = false;
+            }
+        }
+
+
         [RelayCommand]
         private async Task LoadImageAsync()
         {
             if (IsProcessing) return;
             IsProcessing = true;
-            StatisticsText = "Selecting image...";
+            StatusMessage = "Selecting image...";
 
             var file = await GetFilePickerAsync();
             if (file == null)
             {
                 IsProcessing = false;
-                StatisticsText = "Image selection cancelled.";
+                StatusMessage = "Image selection cancelled.";
                 return;
             }
 
@@ -94,19 +190,19 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             StatisticsText = $"Processing with {SelectedIndex}...";
             ProcessingResult? result = null;
 
-            await Task.Run(() =>
+            await Task.Run(async () =>
             {
                 try
                 {
                     // Átadjuk a kiválasztott indexet is!
-                    result = imageProcessor.ProcessImage(currentFilePath, SelectedIndex);
+                    result = await imageProcessor.ProcessImageAsync(currentFilePath, SelectedIndex);
                 }
                 catch (Exception ex)
                 {
                     StatisticsText = $"Error: {ex.Message}";
                 }
             });
-
+            lastResult = result;
             if (result != null && result.Statistics != null)
             {
                 ProcessedImage = ConvertBytesToBitmap(result.ProcessedImageBytes);

@@ -23,54 +23,58 @@
             
             <Grid ColumnDefinitions="Auto, *, Auto">
                 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                    <Button Content="Open Image..." 
-                            Command="{Binding LoadImageCommand}"
-                            IsEnabled="{Binding !IsProcessing}"/>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="15">
                     
-                    <ComboBox ItemsSource="{Binding AvailableIndices}"
-                              SelectedItem="{Binding SelectedIndex}"
-                              IsEnabled="{Binding !IsProcessing}"
-                              Width="120"/>
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="Project:" VerticalAlignment="Center"/>
+                        <ComboBox ItemsSource="{Binding Projects}" 
+                                  SelectedItem="{Binding SelectedProject}"
+                                  DisplayMemberBinding="{Binding Name}"
+                                  Width="150"
+                                  PlaceholderText="Select Project..."/>
+                        
+                        <TextBox Text="{Binding NewProjectName}" Watermark="New Project Name" Width="120"/>
+                        <Button Content="+" Command="{Binding CreateProjectCommand}"/>
+                    </StackPanel>
 
-                    <ProgressBar IsIndeterminate="True" 
-                                 Width="100" 
-                                 VerticalAlignment="Center"
-                                 IsVisible="{Binding IsProcessing}"/>
-                </StackPanel>
+                    <Border Width="1" Background="Gray" Margin="5,2"/>
+
+                    <Button Content="Open Image..." Command="{Binding LoadImageCommand}" IsEnabled="{Binding !IsProcessing}"/>
+                    
+                    <ComboBox ItemsSource="{Binding AvailableIndices}" SelectedItem="{Binding SelectedIndex}"
+                              IsEnabled="{Binding !IsProcessing}" Width="100"/>
+
+                    <Button Content="Save Result" 
+                            Command="{Binding SaveMeasurementCommand}"
+                            IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" 
+                            Background="#2e7d32" Foreground="White"/> </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                    <TextBlock Text="Low" VerticalAlignment="Center" FontSize="11"/>
-                    
+                    <TextBlock Text="Low" VerticalAlignment="Center" FontSize="10"/>
                     <Border BorderBrush="Gray" BorderThickness="1">
                         <Image Source="{Binding ColormapLegend}" Width="150" Height="15" Stretch="Fill"/>
                     </Border>
-                    
-                    <TextBlock Text="High" VerticalAlignment="Center" FontSize="11"/>
+                    <TextBlock Text="High" VerticalAlignment="Center" FontSize="10"/>
                 </StackPanel>
                 
             </Grid>
         </Border>
 
         <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="10">
-            <Border Grid.Column="0" 
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" 
-                    BorderThickness="1" Padding="5" Margin="5">
+            <Border Grid.Column="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
                 <Image Source="{Binding OriginalImage}" Stretch="Uniform"/>
             </Border>
-
-            <Border Grid.Column="1" 
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" 
-                    BorderThickness="1" Padding="5" Margin="5">
+            <Border Grid.Column="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
                 <Image Source="{Binding ProcessedImage}" Stretch="Uniform"/>
             </Border>
         </Grid>
         
-        <Border Grid.Row="2" 
-                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
-                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" 
-                BorderThickness="0 1 0 0" Padding="10">
-            <TextBlock Text="{Binding StatisticsText}" FontSize="14" FontWeight="SemiBold"/>
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="10">
+            <Grid ColumnDefinitions="*, Auto">
+                <TextBlock Grid.Column="0" Text="{Binding StatisticsText}" FontSize="14" FontWeight="Bold"/>
+                
+                <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" FontStyle="Italic" Foreground="Gray"/>
+            </Grid>
         </Border>
 
     </Grid>
