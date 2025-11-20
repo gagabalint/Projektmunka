@@ -1,81 +1,91 @@
 <Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:PlantConditionAnalyzer.AvaloniaApp.ViewModels"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
-        x:Class="PlantConditionAnalyzer.AvaloniaApp.Views.MainWindow"
-        x:DataType="vm:MainWindowViewModel"
-        Icon="/Assets/avalonia-logo.ico"
-        Title="Plant Condition Analyzer">
+		xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+		xmlns:vm="using:PlantConditionAnalyzer.AvaloniaApp.ViewModels"
+		xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+		xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+		mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
+		x:Class="PlantConditionAnalyzer.AvaloniaApp.Views.MainWindow"
+		x:DataType="vm:MainWindowViewModel"
+		Icon="/Assets/avalonia-logo.ico"
+		Title="Plant Condition Analyzer">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel/>
-    </Design.DataContext>
+	<Design.DataContext>
+		<vm:MainWindowViewModel/>
+	</Design.DataContext>
 
-    <Grid RowDefinitions="Auto, *, Auto">
+	<Grid RowDefinitions="Auto, *, Auto">
 
-        <Border Grid.Row="0" 
-                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
-                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" 
-                BorderThickness="0 0 0 1" 
-                Padding="10">
-            
-            <Grid ColumnDefinitions="Auto, *, Auto">
-                
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="15">
-                    
-                    <StackPanel Orientation="Horizontal" Spacing="5">
-                        <TextBlock Text="Project:" VerticalAlignment="Center"/>
-                        <ComboBox ItemsSource="{Binding Projects}" 
-                                  SelectedItem="{Binding SelectedProject}"
-                                  DisplayMemberBinding="{Binding Name}"
-                                  Width="150"
-                                  PlaceholderText="Select Project..."/>
-                        
-                        <TextBox Text="{Binding NewProjectName}" Watermark="New Project Name" Width="120"/>
-                        <Button Content="+" Command="{Binding CreateProjectCommand}"/>
-                    </StackPanel>
+		<Border Grid.Row="0"
+				Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+				BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+				BorderThickness="0 0 0 1"
+				Padding="10">
 
-                    <Border Width="1" Background="Gray" Margin="5,2"/>
+			<Grid ColumnDefinitions="Auto, *, Auto">
 
-                    <Button Content="Open Image..." Command="{Binding LoadImageCommand}" IsEnabled="{Binding !IsProcessing}"/>
-                    
-                    <ComboBox ItemsSource="{Binding AvailableIndices}" SelectedItem="{Binding SelectedIndex}"
-                              IsEnabled="{Binding !IsProcessing}" Width="100"/>
+				<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="15">
 
-                    <Button Content="Save Result" 
-                            Command="{Binding SaveMeasurementCommand}"
-                            IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" 
-                            Background="#2e7d32" Foreground="White"/> </StackPanel>
+					<StackPanel Orientation="Horizontal" Spacing="5">
+						<TextBlock Text="Project:" VerticalAlignment="Center"/>
+						<ComboBox ItemsSource="{Binding Projects}"
+								  SelectedItem="{Binding SelectedProject}"
+								  DisplayMemberBinding="{Binding Name}"
+								  Width="150"
+								  PlaceholderText="Select Project..."/>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
-                    <TextBlock Text="Low" VerticalAlignment="Center" FontSize="10"/>
-                    <Border BorderBrush="Gray" BorderThickness="1">
-                        <Image Source="{Binding ColormapLegend}" Width="150" Height="15" Stretch="Fill"/>
-                    </Border>
-                    <TextBlock Text="High" VerticalAlignment="Center" FontSize="10"/>
-                </StackPanel>
-                
-            </Grid>
-        </Border>
+						<TextBox Text="{Binding NewProjectName}" Watermark="New Project Name" Width="120"/>
+						<Button Content="+" Command="{Binding CreateProjectCommand}"/>
+					</StackPanel>
 
-        <Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="10">
-            <Border Grid.Column="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
-                <Image Source="{Binding OriginalImage}" Stretch="Uniform"/>
-            </Border>
-            <Border Grid.Column="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
-                <Image Source="{Binding ProcessedImage}" Stretch="Uniform"/>
-            </Border>
-        </Grid>
-        
-        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="10">
-            <Grid ColumnDefinitions="*, Auto">
-                <TextBlock Grid.Column="0" Text="{Binding StatisticsText}" FontSize="14" FontWeight="Bold"/>
-                
-                <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" FontStyle="Italic" Foreground="Gray"/>
-            </Grid>
-        </Border>
+					<Border Width="1" Background="Gray" Margin="5,2"/>
 
-    </Grid>
+					<Button Content="Open Image..."
+							Command="{Binding LoadImageCommand}"
+							IsEnabled="{Binding !IsProcessing}"/>
+
+					<Button Command="{Binding ToggleCameraCommand}"
+							IsEnabled="{Binding !IsProcessing}">
+						<Panel>
+							<TextBlock Text="Toggle Camera" />
+
+						</Panel>
+					</Button>
+
+					<ComboBox ItemsSource="{Binding AvailableIndices}" SelectedItem="{Binding SelectedIndex}"
+							  IsEnabled="{Binding !IsProcessing}" Width="100"/>
+
+					<Button Content="Save Result"
+							Command="{Binding SaveMeasurementCommand}"
+							IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+							Background="#2e7d32" Foreground="White"/> </StackPanel>
+
+				<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+					<TextBlock Text="Low" VerticalAlignment="Center" FontSize="10"/>
+					<Border BorderBrush="Gray" BorderThickness="1">
+						<Image Source="{Binding ColormapLegend}" Width="150" Height="15" Stretch="Fill"/>
+					</Border>
+					<TextBlock Text="High" VerticalAlignment="Center" FontSize="10"/>
+				</StackPanel>
+
+			</Grid>
+		</Border>
+
+		<Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="10">
+			<Border Grid.Column="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
+				<Image Source="{Binding OriginalImage}" Stretch="Uniform"/>
+			</Border>
+			<Border Grid.Column="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
+				<Image Source="{Binding ProcessedImage}" Stretch="Uniform"/>
+			</Border>
+		</Grid>
+
+		<Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="10">
+			<Grid ColumnDefinitions="*, Auto">
+				<TextBlock Grid.Column="0" Text="{Binding StatisticsText}" FontSize="14" FontWeight="Bold"/>
+
+				<TextBlock Grid.Column="1" Text="{Binding StatusMessage}" FontStyle="Italic" Foreground="Gray"/>
+			</Grid>
+		</Border>
+
+	</Grid>
 </Window>

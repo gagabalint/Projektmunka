@@ -52,13 +52,13 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
                 // Összefésülés az eredetivel
                 using Mat finalImage = new Mat();
-                // Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+                 Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
 
 
                 // NINCS HÁTTÉR -- vagy ez vagy a felette levo
-                using Mat maskedOriginal = new Mat();
-                original.CopyTo(maskedOriginal, plantMask);
-                Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+                //using Mat maskedOriginal = new Mat();
+                //original.CopyTo(maskedOriginal, plantMask);
+                //Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
 
                 double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / (plantMask.Rows * plantMask.Cols) * 100.0;
 

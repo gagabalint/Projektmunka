@@ -41,11 +41,17 @@ namespace PlantConditionAnalyzer.AvaloniaApp
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                
+                var mainWindowViewModel = Services.GetRequiredService<MainWindowViewModel>();
+
+
                 desktop.MainWindow = new MainWindow
                 {
                    
-                    DataContext = Services.GetRequiredService<MainWindowViewModel>()
+                    DataContext =mainWindowViewModel
+                };
+                desktop.Exit += (sender, args) =>
+                {
+                    mainWindowViewModel.Dispose(); //ha bezartak az appot, ez allitja le a kamerat
                 };
             }
            
