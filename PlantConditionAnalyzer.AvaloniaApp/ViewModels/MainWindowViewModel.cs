@@ -10,6 +10,7 @@ using OpenCvSharp;
 using PlantConditionAnalyzer.Core.Enums;
 using PlantConditionAnalyzer.Core.Interfaces;
 using PlantConditionAnalyzer.Core.Models;
+using PlantConditionAnalyzer.Infrastructure.Services;
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -20,15 +21,21 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 {
     public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
+
+
+
+
+       
+
+
+
         private readonly IImageProcessingService imageProcessor;
         private readonly IDatabaseService databaseService;
-
+        private readonly ICameraService cameraService;
 
         private string? currentFilePath;
 
-        private VideoCapture? capture;
-        private System.Threading.Timer? cameraTimer;
-        private bool isCameraRunning = false;
+
         private bool isProcessingFrame = false;//overload vedelem
         private int frameCounter = 0;
 
@@ -66,12 +73,13 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         [ObservableProperty]
         private string statusMessage = "Ready";
 
-
-
-        public MainWindowViewModel(IImageProcessingService imageProcessor, IDatabaseService databaseService)
+        public MainWindowViewModel(IImageProcessingService imageProcessor, IDatabaseService databaseService, ICameraService cameraService)
         {
+            this.cameraService = cameraService;
             this.imageProcessor = imageProcessor;
             this.databaseService = databaseService;
+            cameraService.FrameCaptured += OnFrameCaptured;
+            cameraService.ErrorOccurred += (s, msg) => StatusMessage = msg;
 
             statisticsText = "Select an image to process";
 
@@ -82,93 +90,93 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         }
 
 
-
         [RelayCommand]
         private void ToggleCamera()
         {
-            if (isCameraRunning) StopCamera();
-            else StartCamera();
+            if (cameraService.IsRunning)
+            {
+                cameraService.Stop();
+                IsCameraModeOn = false;
+                StatusMessage = "Camera stopped.";
+            }
+            else
+            {
+                IsCameraModeOn = true;
+                StatusMessage = "Starting camera...";
+                cameraService.Start(0);
+            }
         }
 
-        private void StartCamera()
+        [RelayCommand]
+        private async Task LoadVideoAsync()
         {
-            try
-            {
-                capture = new VideoCapture(0);//temp, elsodleges, de kulsohoz modositando az index
-                if (!capture.IsOpened())
-                {
-                    StatusMessage = "Couldn't open camera!";
-                    return;
-                }
-                isCameraRunning = true;
-                isCameraModeOn = true;
-                StatusMessage = "Camera started";
-                cameraTimer = new System.Threading.Timer(CameraTick, null, 0, 33);//kb 30fps az input igy
+            cameraService.Stop();
 
-            }
-            catch (Exception)
-            {
+            var file = await GetVideoPickerAsync();
+            if (file == null) return;
 
-                throw;
-            }
+            IsCameraModeOn = true;
+            StatusMessage = "Playing video...";
 
+            cameraService.Start(file.Path.LocalPath);
         }
-        private async void CameraTick(object? state)
+
+        private async void OnFrameCaptured(object? sender, Mat frame)
         {
-            if (capture == null || capture.IsDisposed) return;
+            // Ha épp dolgozunk egy előző képen, ezt eldobjuk (hogy ne akadjon a UI)
+            if (IsProcessing)
+            {
+                frame.Dispose();
+                return;
+            }
+
+            IsProcessing = true;
+
             try
             {
-                using Mat frame = new();
-                if (!capture.Read(frame) || frame.Empty()) return;//kamera buffer overload megelozese 
-                frameCounter++;
-                if (frameCounter % 3 != 0) return; //csak minden 3. framet dolgozzuk fel memoriaigeny csokkentese miatt
-                if (isProcessingFrame) return; //eldobjuk az aktualist, ha az elozo meg nem lett feldolgozva
-                isProcessingFrame = true;
-                var result = await imageProcessor.ProcessImageAsync(frame, SelectedIndex);
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                using (frame)
                 {
-                    OriginalImage = ConvertBytesToBitmap(frame.ToBytes(".bmp"));
-                    ProcessedImage = ConvertBytesToBitmap(result.ProcessedImageBytes);
+                    var result = await imageProcessor.ProcessImageAsync(frame, SelectedIndex);
 
-                    var s = result.Statistics;
-                    StatisticsText = $"LIVE FEED ({s.VegetationIndexName})\n" +
-                                     $"Mean Vitality: {s.ViMean:F2}\n" +
-                                     $"Plant Cover: {s.PlantAreaPercentage:F1}%";
-
-                    lastResult = result; // video kozbeni snapshothoz szukseges
-                });
-
-            }
-            catch (Exception e)
-            {
-                try
-                {
-                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    try
                     {
-                        StatusMessage = $"Stream Error: {e.Message}";
-                        StopCamera();
-                    });
-                }
-                catch (TaskCanceledException) { }//hogyha bezartak az alkalmazast, elengedjuk a hibat
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            if (result != null && result.Statistics != null)
+                            {
+                                OriginalImage = ConvertBytesToBitmap(frame.ToBytes());
+                                ProcessedImage = ConvertBytesToBitmap(result.ProcessedImageBytes);
+                                var s = result.Statistics;
+                                StatisticsText = $"LIVE: {s.VegetationIndexName}\n" +
+                                                 $"Mean: {s.ViMean:F2} | Cover: {s.PlantAreaPercentage:F1}%";
 
+                                lastResult = result;
+                            }
+                        });
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        //kamera mod kozben program bezaraskor ide jon
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+
+                System.Diagnostics.Debug.WriteLine(ex.Message);
             }
             finally
             {
-                isProcessingFrame = false;
+                IsProcessing = false;
             }
         }
-        private void StopCamera()
+
+        public void Dispose()
         {
-            cameraTimer?.Dispose();
-            cameraTimer = null;
-
-            capture?.Release();
-            capture = null;
-
-            isCameraRunning = false;
-            IsCameraModeOn = false;
-            StatusMessage = "Camera stopped.";
+            cameraService.Stop();
         }
+
         private async Task LoadProjectsAsync()
         {
             var sets = await databaseService.GetCaptureSetsAsync();
@@ -250,7 +258,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         [RelayCommand]
         private async Task LoadImageAsync()
         {
-            if (isCameraRunning) StopCamera();
+            if (cameraService.IsRunning) cameraService.Stop();
             if (IsProcessing) return;
             IsProcessing = true;
             StatusMessage = "Selecting image...";
@@ -289,7 +297,6 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             {
                 try
                 {
-                    // Átadjuk a kiválasztott indexet is!
                     result = await imageProcessor.ProcessImageAsync(currentFilePath, SelectedIndex);
                 }
                 catch (Exception ex)
@@ -319,9 +326,8 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         }
         private async Task<IStorageFile?> GetFilePickerAsync()
         {
-            // Az Avalonia megköveteli, hogy a Fájl Dialógus a "legfelső" ablakhoz
-            // kapcsolódjon, ezért kell ez a kis varázslat.
-            // Közvetlenül elkérjük a MainWindow-t az alkalmazás élettartamától
+            // Az Avalonia megköveteli hogy a file dialogue a legfelso ablakon nyiljon, ezert kell a topLevel
+            
             var topLevel = (App.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow; if (topLevel == null) return null;
 
             var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -333,10 +339,21 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
             return files.Count >= 1 ? files[0] : null;
         }
-
-        public void Dispose()
+        private async Task<IStorageFile?> GetVideoPickerAsync()
         {
-            StopCamera();
+            var topLevel = (App.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+            if (topLevel == null) return null;
+
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Select Video File",
+                AllowMultiple = false,
+                FileTypeFilter = new[] { new FilePickerFileType("Video Files") { Patterns = new[] { "*.mp4", "*.avi", "*.mkv" } } }
+            });
+
+            return files.Count > 0 ? files[0] : null;
         }
+
+
     }
 }

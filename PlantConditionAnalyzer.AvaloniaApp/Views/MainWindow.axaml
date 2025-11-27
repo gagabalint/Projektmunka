@@ -40,11 +40,10 @@
 					<Border Width="1" Background="Gray" Margin="5,2"/>
 
 					<Button Content="Open Image..."
-							Command="{Binding LoadImageCommand}"
-							IsEnabled="{Binding !IsProcessing}"/>
-
-					<Button Command="{Binding ToggleCameraCommand}"
-							IsEnabled="{Binding !IsProcessing}">
+							Command="{Binding LoadImageCommand}"/>
+					<Button Content="Load Video..."
+							Command="{Binding LoadVideoCommand}"/>
+					<Button Command="{Binding ToggleCameraCommand}">
 						<Panel>
 							<TextBlock Text="Toggle Camera" />
 
@@ -52,7 +51,7 @@
 					</Button>
 
 					<ComboBox ItemsSource="{Binding AvailableIndices}" SelectedItem="{Binding SelectedIndex}"
-							  IsEnabled="{Binding !IsProcessing}" Width="100"/>
+							  Width="100"/>
 
 					<Button Content="Save Result"
 							Command="{Binding SaveMeasurementCommand}"

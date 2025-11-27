@@ -63,7 +63,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp
         {
             services.AddSingleton<IImageProcessingService, ImageProcessingService>();
             services.AddSingleton<IDatabaseService,DatabaseService>();
-           
+            services.AddSingleton<ICameraService, CameraService>();
             services.AddTransient<MainWindowViewModel>();
         }
     }
