@@ -70,7 +70,6 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             {
                 bool readSuccess = false;
 
-                // Kritikus szakasz: Olvasás
                 lock (cameraLock)
                 {
                     // Ha időközben leállították
@@ -80,15 +79,13 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
                 if (readSuccess && !frame.Empty())
                 {
-                    // Jelezzük a külvilágnak (ViewModel), hogy van kép.
-                    // Fontos: Klónozzuk, hogy a ViewModel szabadon használhassa,
-                    // miközben mi már a következőt olvassuk.
+                    // vmnek jelzes a keprol.
+                  
                     FrameCaptured?.Invoke(this, frame.Clone());
                 }
                 else
                 {
                     // Ha videófájl volt és vége, vagy hiba történt
-                    // (Élő kameránál ritka a false, de előfordulhat)
                     if (!token.IsCancellationRequested)
                     {
                         // Opcionális: ErrorOccurred?.Invoke(this, "End of stream");
@@ -97,7 +94,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     break;
                 }
 
-                // Kb. 30 FPS (33ms várakozás)
+                // Kb. 30 FPS 
                 Thread.Sleep(33);
             }
         }
@@ -105,11 +102,9 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         public void Stop()
         {
             IsRunning = false;
-            cts?.Cancel(); // Jelezzük a szálnak, hogy álljon le
+            cts?.Cancel();
 
-            // Várunk kicsit, hogy a szál befejezze
-            // (A .Wait() itt veszélyes lehet UI szálon, de mivel rövid a ciklus, elmegy,
-            // vagy hagyjuk futni, a lock úgyis véd)
+           
 
             lock (cameraLock)
             {
