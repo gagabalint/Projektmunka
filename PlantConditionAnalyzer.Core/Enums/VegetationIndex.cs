@@ -8,6 +8,6 @@ namespace PlantConditionAnalyzer.Core.Enums
 {
     public enum VegetationIndex
     {
-        ExG,ExGR,VARI,GLI,NGRDI,TGI
+        ExG,ExGR,VARI,GLI,NGRDI,TGI,MGRVI
     }
 }

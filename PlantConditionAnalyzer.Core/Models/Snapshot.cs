@@ -22,5 +22,7 @@ namespace PlantConditionAnalyzer.Core.Models
         public string VegetationIndexName { get; set; } = "ExG";
         public int CaptureSetId { get; set; }
         public CaptureSet? CaptureSet { get; set; }
+        //public int? PlantProfileId { get; set; }
+        //public PlantProfile? PlantProfile { get; set; }
     }
 }

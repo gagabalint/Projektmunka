@@ -311,6 +311,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                 StatisticsText = $"Index: {result.Statistics.VegetationIndexName}\n" +
                                  $"Mean: {result.Statistics.ViMean:F2}\n" +
                                  $"StdDev: {result.Statistics.ViStdDev:F2}\n" +
+                                 $"SPAD estimate: {result.Statistics.SpadEstimate:F2}"+
                                  $"Area: {result.Statistics.PlantAreaPercentage:F1}%";
             }
 
@@ -334,7 +335,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             {
                 Title = "Válassz egy képet a feldolgozáshoz",
                 AllowMultiple = false,
-                FileTypeFilter = new[] { FilePickerFileTypes.ImageAll }
+                FileTypeFilter = new[] { FilePickerFileTypes.ImageAll } 
             });
 
             return files.Count >= 1 ? files[0] : null;
