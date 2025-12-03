@@ -39,7 +39,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         private ProcessingResult ProcessMat(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
         {
 
-            using Mat original = ApplyROI(rawOriginal, 0.15);
+            using Mat original = ApplyROI(rawOriginal, 0.2);
 
             using Mat plantMask = GetSegmentationMask(original);
             using Mat rawIndexMap = CalculateIndexImage(original, indexType);
@@ -59,13 +59,13 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             // Összefésülés
             using Mat finalImage = new Mat();
-            Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+          //  Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
 
 
             // NINCS HÁTTÉR -- vagy ez vagy a felette levo
-            //using Mat maskedOriginal = new Mat();
-            //original.CopyTo(maskedOriginal, plantMask);
-            //Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+            using Mat maskedOriginal = new Mat();
+            original.CopyTo(maskedOriginal, plantMask);
+            Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
 
             double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / (plantMask.Rows * plantMask.Cols) * 100.0;
 
@@ -132,8 +132,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             foreach (var c in channels) c.Dispose(); //nincs szukseg a csatornakra mar
 
             // Az eredményt tároló mátrix
-            Mat result = new Mat();
-
+            Mat result = new Mat(original.Size(), MatType.CV_32F);
             switch (type)
             {
                 case VegetationIndex.ExG:
@@ -150,14 +149,29 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     using (Mat exr = (r * 1.4) - g)
                         Cv2.Subtract(exg, exr, result);
                     break;
-
                 case VegetationIndex.VARI:
                     // VARI = (G - R) / (G + R - B)
+
                     using (Mat num = g - r)
                     using (Mat den1 = g + r)
                     using (Mat den2 = den1 - b)
                     {
-                        Cv2.Divide(num, den2, result);//0-val osztast kezeli
+                        //nem szall el vegetelnbe
+                        using (Mat denSafe = den2 + new Scalar(0.0000001))
+                        {
+                            Cv2.Divide(num, denSafe, result);
+                        }
+                    }
+                    Cv2.PatchNaNs(result, 0);
+
+                    // 2. Kiugró értékek levágása 
+                    Cv2.Threshold(result, result, 1.0, 1.0, ThresholdTypes.Trunc);
+
+                    // Minden, ami -1.0-nál kisebb, legyen -1.0
+           
+                    using (Mat lowerBound = new Mat(result.Size(), MatType.CV_32F, new Scalar(-1.0)))
+                    {
+                        Cv2.Max(result, lowerBound, result);
                     }
                     break;
 
@@ -233,17 +247,6 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             if (IsMaskInverted(preMask)) Cv2.BitwiseNot(preMask, preMask);
 
-            //uj resz
-            // 2. ELŐSZEGMENTÁLÁS (ExG + Otsu)
-            // Ez megtalálja a "zöld jellegű" dolgokat (beleértve a zöldes árnyékot is)
-            using (Mat exg = CalculateIndexImage(blurred, VegetationIndex.ExG))
-            using (Mat exg8 = new Mat())
-            {
-                Cv2.Normalize(exg, exg8, 0, 255, NormTypes.MinMax, MatType.CV_8U);
-                Cv2.Threshold(exg8, preMask, 0, 255, ThresholdTypes.Otsu | ThresholdTypes.Binary);
-            }
-
-            if (IsMaskInverted(preMask)) Cv2.BitwiseNot(preMask, preMask);
 
 
             FilterSmallBlobs(preMask, 200);
@@ -323,7 +326,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         }
         private Mat ApplyROI(Mat original, double marginPercent)
         {
-            int marginX = (int)(original.Cols * marginPercent * 2);
+            int marginX = (int)(original.Cols * marginPercent );
             int marginY = (int)(original.Rows * marginPercent);
 
             // Létrehozunk egy fekete maszkot
