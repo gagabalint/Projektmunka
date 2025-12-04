@@ -38,114 +38,63 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         }
         private ProcessingResult ProcessMat(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
         {
-
-            using Mat original = ApplyROI(rawOriginal, 0.1);
+            double toCut = 0.1;
+            using Mat original = ApplyROI(rawOriginal, toCut);
 
             using Mat plantMask = GetSegmentationMask(original);
             using Mat rawIndexMap = CalculateIndexImage(original, indexType);
-            using Mat temp = rawIndexMap;
+            Cv2.MinMaxLoc(rawIndexMap, out double actualMin, out double actualMax);
 
-          //  using Mat NGRDI = CalculateIndexImage(original, VegetationIndex.VARI);//fejleszteni hogy ne szamolja duplan ha mgrvi
-
-
+            // normalizálás fixált tartománnyal
             using Mat normalizedIndexMap = new();
-            Cv2.Normalize(rawIndexMap, normalizedIndexMap, 0, 255, NormTypes.MinMax, MatType.CV_8U);
+            double theoreticalMin, theoreticalMax;
+
+            switch (indexType)
+            {
+                case VegetationIndex.ExG:
+                case VegetationIndex.ExGR:
+                case VegetationIndex.TGI:
+                    theoreticalMin = -1.0;
+                    theoreticalMax = 2.0;
+                    break;
+                case VegetationIndex.MGRVI:
+                case VegetationIndex.VARI:
+                case VegetationIndex.NGRDI:
+                case VegetationIndex.GLI:
+                    theoreticalMin = -1.0;
+                    theoreticalMax = 1.0;
+                    break;
+                default:
+                    theoreticalMin = -1.0;
+                    theoreticalMax = 2.0;
+                    break;
+            }
+
+            // Manuális normalizálás [theoreticalMin, theoreticalMax] → [0, 255]
+            using Mat shifted = rawIndexMap - new Scalar(theoreticalMin);
+            double scale = 255.0 / (theoreticalMax - theoreticalMin);
+            shifted.ConvertTo(normalizedIndexMap, MatType.CV_8U, scale);
+
             using Mat heatmap = new Mat();
             Cv2.ApplyColorMap(normalizedIndexMap, heatmap, ColormapTypes.Turbo);
 
-            // Novenyzet maszkolasa
+            // Maszkolás
             using Mat maskedHeatmap = Mat.Zeros(original.Size(), original.Type());
             heatmap.CopyTo(maskedHeatmap, plantMask);
 
             // Összefésülés
-            using Mat finalImage = new Mat();
-          //  Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
-
-
-            // NINCS HÁTTÉR -- vagy ez vagy a felette levo
             using Mat maskedOriginal = new Mat();
             original.CopyTo(maskedOriginal, plantMask);
+            using Mat finalImage = new Mat();
             Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
-
-            double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / (plantMask.Rows * plantMask.Cols) * 100.0;
-            //  Cv2.MeanStdDev(normalizedIndexMap, out Scalar meanVis, out Scalar stdVis, plantMask);
+            double rows = plantMask.Rows*(1 - 2 * toCut);
+            double cols = plantMask.Cols*(1 - 2 * toCut);
+        
+            double wholeArea = rows*cols;
+            // Statisztikák
+            double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / wholeArea * 100.0;
             Cv2.MeanStdDev(rawIndexMap, out Scalar meanRaw, out Scalar stdRaw, plantMask);
 
-
-            #region újspad
-
-            // Feltételezzük:
-            // 'result' = a VARI indexek float mátrixa (CV_32F)
-            // 'mask'   = a bináris maszk (CV_8U), ahol 255 a növény
-
-            
-           
-
-            // Átmásoljuk a C++ memóriából a C# tömbbe
-            //NGRDI.GetArray(out float[] variValues);
-            //plantMask.GetArray(out byte[] maskValues);
-
-            //// 2. Szűrés: Csak a maszk alatti értékeket gyűjtjük ki
-            //var validPixels = new List<float>();
-
-            //// Ez a ciklus végigfut a képen (optimalizálható pointerrel, de így is gyors)
-            //for (int i = 0; i < variValues.Length; i++)
-            //{
-            //    // Ha a maszk szerint ez növény (nem 0)
-            //    if (maskValues[i] > 0)
-            //    {
-            //        validPixels.Add(variValues[i]);
-            //    }
-            //}
-
-            //double finalSpadPredictor = 0;
-
-            //if (validPixels.Count > 0)
-            //{
-            //    // 3. SORBARENDEZÉS (Ez a kulcs!)
-            //    validPixels.Sort();
-
-            //    //Trimmed mean
-            //    // Eldobjuk az alsó és felső 25%ot
-            //    int q1 = (int)(validPixels.Count * 0.25); 
-            //    int q3 = (int)(validPixels.Count * 0.75); 
-
-            //    // Biztonsági ellenőrzés, ha túl kicsi a minta
-            //    if (q3 <= q1) { q1 = 0; q3 = validPixels.Count; }
-
-            //    double sum = 0;
-            //    int count = 0;
-
-            //    // Csak a középső tartományt átlagoljuk
-            //    for (int i = q1; i < q3; i++)
-            //    {
-            //        sum += validPixels[i];
-            //        count++;
-            //    }
-
-            //    finalSpadPredictor = (count > 0) ? (sum / count) : 0;
-            //}
-            //else
-            //{
-            //    // Nem talált növényt a képen
-            //    finalSpadPredictor = 0;
-            //}
-            #endregion
-            // EZT AZ ÉRTÉKET használd a regresszióhoz és a méréshez is!
-            // double estimatedSPAD = m * finalSpadPredictor + b;
-            #region regi spad 
-
-
-            //Cv2.MeanStdDev(NGRDI, out Scalar mgrviMeanRaw, out Scalar mgrviStdRaw, plantMask);
-            //double? spadValue = null;
-
-
-
-            //// SPAD = A * Index + B
-            //spadValue = (PlantProfile.SpadSlope * mgrviMeanRaw.Val0) + PlantProfile.SpadIntercept;
-
-            //if (spadValue < 0) spadValue = 0;
-            #endregion
             var stats = new Snapshot
             {
                 Timestamp = DateTime.Now,
@@ -154,7 +103,6 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 ViMean = meanRaw.Val0,
                 ViStdDev = stdRaw.Val0,
                 PlantAreaPercentage = plantAreaPercentage,
-               
             };
 
             return new ProcessingResult
@@ -162,7 +110,123 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 ProcessedImageBytes = finalImage.ToBytes(".bmp"),
                 Statistics = stats
             };
+            #region teszt
 
+            //  using Mat normalizedIndexMap = new();
+            //  Cv2.Normalize(rawIndexMap, normalizedIndexMap, 0, 255, NormTypes.MinMax, MatType.CV_8U);
+            //  using Mat heatmap = new Mat();
+            //  Cv2.ApplyColorMap(normalizedIndexMap, heatmap, ColormapTypes.Turbo);
+
+            //  // Novenyzet maszkolasa
+            //  using Mat maskedHeatmap = Mat.Zeros(original.Size(), original.Type());
+            //  heatmap.CopyTo(maskedHeatmap, plantMask);
+
+            //  // Összefésülés
+            //  using Mat finalImage = new Mat();
+            ////  Cv2.AddWeighted(original, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+
+
+            //  // NINCS HÁTTÉR -- vagy ez vagy a felette levo
+            //  using Mat maskedOriginal = new Mat();
+            //  original.CopyTo(maskedOriginal, plantMask);
+            //  Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+
+            //  double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / (plantMask.Rows * plantMask.Cols) * 100.0;
+            //  //  Cv2.MeanStdDev(normalizedIndexMap, out Scalar meanVis, out Scalar stdVis, plantMask);
+            //  Cv2.MeanStdDev(rawIndexMap, out Scalar meanRaw, out Scalar stdRaw, plantMask);
+
+
+            //  #region újspad
+
+            //  // Feltételezzük:
+            //  // 'result' = a VARI indexek float mátrixa (CV_32F)
+            //  // 'mask'   = a bináris maszk (CV_8U), ahol 255 a növény
+
+
+
+
+            //  // Átmásoljuk a C++ memóriából a C# tömbbe
+            //  //NGRDI.GetArray(out float[] variValues);
+            //  //plantMask.GetArray(out byte[] maskValues);
+
+            //  //// 2. Szűrés: Csak a maszk alatti értékeket gyűjtjük ki
+            //  //var validPixels = new List<float>();
+
+            //  //// Ez a ciklus végigfut a képen (optimalizálható pointerrel, de így is gyors)
+            //  //for (int i = 0; i < variValues.Length; i++)
+            //  //{
+            //  //    // Ha a maszk szerint ez növény (nem 0)
+            //  //    if (maskValues[i] > 0)
+            //  //    {
+            //  //        validPixels.Add(variValues[i]);
+            //  //    }
+            //  //}
+
+            //  //double finalSpadPredictor = 0;
+
+            //  //if (validPixels.Count > 0)
+            //  //{
+            //  //    // 3. SORBARENDEZÉS (Ez a kulcs!)
+            //  //    validPixels.Sort();
+
+            //  //    //Trimmed mean
+            //  //    // Eldobjuk az alsó és felső 25%ot
+            //  //    int q1 = (int)(validPixels.Count * 0.25); 
+            //  //    int q3 = (int)(validPixels.Count * 0.75); 
+
+            //  //    // Biztonsági ellenőrzés, ha túl kicsi a minta
+            //  //    if (q3 <= q1) { q1 = 0; q3 = validPixels.Count; }
+
+            //  //    double sum = 0;
+            //  //    int count = 0;
+
+            //  //    // Csak a középső tartományt átlagoljuk
+            //  //    for (int i = q1; i < q3; i++)
+            //  //    {
+            //  //        sum += validPixels[i];
+            //  //        count++;
+            //  //    }
+
+            //  //    finalSpadPredictor = (count > 0) ? (sum / count) : 0;
+            //  //}
+            //  //else
+            //  //{
+            //  //    // Nem talált növényt a képen
+            //  //    finalSpadPredictor = 0;
+            //  //}
+            //  #endregion
+            //  // EZT AZ ÉRTÉKET használd a regresszióhoz és a méréshez is!
+            //  // double estimatedSPAD = m * finalSpadPredictor + b;
+            //  #region regi spad 
+
+
+            //  //Cv2.MeanStdDev(NGRDI, out Scalar mgrviMeanRaw, out Scalar mgrviStdRaw, plantMask);
+            //  //double? spadValue = null;
+
+
+
+            //  //// SPAD = A * Index + B
+            //  //spadValue = (PlantProfile.SpadSlope * mgrviMeanRaw.Val0) + PlantProfile.SpadIntercept;
+
+            //  //if (spadValue < 0) spadValue = 0;
+            //  #endregion
+            //  var stats = new Snapshot
+            //  {
+            //      Timestamp = DateTime.Now,
+            //      ImagePath = "n/a",
+            //      VegetationIndexName = indexType.ToString(),
+            //      ViMean = meanRaw.Val0,
+            //      ViStdDev = stdRaw.Val0,
+            //      PlantAreaPercentage = plantAreaPercentage,
+
+            //  };
+
+            //  return new ProcessingResult
+            //  {
+            //      ProcessedImageBytes = finalImage.ToBytes(".bmp"),
+            //      Statistics = stats
+            //  };
+            #endregion
         }
         public byte[] GenerateColormapLegend()
         {
