@@ -39,13 +39,13 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         private ProcessingResult ProcessMat(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
         {
 
-            using Mat original = ApplyROI(rawOriginal, 0.2);
+            using Mat original = ApplyROI(rawOriginal, 0.1);
 
             using Mat plantMask = GetSegmentationMask(original);
             using Mat rawIndexMap = CalculateIndexImage(original, indexType);
             using Mat temp = rawIndexMap;
 
-            using Mat MGRVI = CalculateIndexImage(original, VegetationIndex.MGRVI);//fejleszteni hogy ne szamolja duplan ha mgrvi
+          //  using Mat NGRDI = CalculateIndexImage(original, VegetationIndex.VARI);//fejleszteni hogy ne szamolja duplan ha mgrvi
 
 
             using Mat normalizedIndexMap = new();
@@ -68,19 +68,84 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
 
             double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / (plantMask.Rows * plantMask.Cols) * 100.0;
-
             //  Cv2.MeanStdDev(normalizedIndexMap, out Scalar meanVis, out Scalar stdVis, plantMask);
             Cv2.MeanStdDev(rawIndexMap, out Scalar meanRaw, out Scalar stdRaw, plantMask);
-            Cv2.MeanStdDev(MGRVI, out Scalar mgrviMeanRaw, out Scalar mgrviStdRaw, plantMask);
-            double? spadValue = null;
+
+
+            #region újspad
+
+            // Feltételezzük:
+            // 'result' = a VARI indexek float mátrixa (CV_32F)
+            // 'mask'   = a bináris maszk (CV_8U), ahol 255 a növény
+
+            
+           
+
+            // Átmásoljuk a C++ memóriából a C# tömbbe
+            //NGRDI.GetArray(out float[] variValues);
+            //plantMask.GetArray(out byte[] maskValues);
+
+            //// 2. Szűrés: Csak a maszk alatti értékeket gyűjtjük ki
+            //var validPixels = new List<float>();
+
+            //// Ez a ciklus végigfut a képen (optimalizálható pointerrel, de így is gyors)
+            //for (int i = 0; i < variValues.Length; i++)
+            //{
+            //    // Ha a maszk szerint ez növény (nem 0)
+            //    if (maskValues[i] > 0)
+            //    {
+            //        validPixels.Add(variValues[i]);
+            //    }
+            //}
+
+            //double finalSpadPredictor = 0;
+
+            //if (validPixels.Count > 0)
+            //{
+            //    // 3. SORBARENDEZÉS (Ez a kulcs!)
+            //    validPixels.Sort();
+
+            //    //Trimmed mean
+            //    // Eldobjuk az alsó és felső 25%ot
+            //    int q1 = (int)(validPixels.Count * 0.25); 
+            //    int q3 = (int)(validPixels.Count * 0.75); 
+
+            //    // Biztonsági ellenőrzés, ha túl kicsi a minta
+            //    if (q3 <= q1) { q1 = 0; q3 = validPixels.Count; }
+
+            //    double sum = 0;
+            //    int count = 0;
+
+            //    // Csak a középső tartományt átlagoljuk
+            //    for (int i = q1; i < q3; i++)
+            //    {
+            //        sum += validPixels[i];
+            //        count++;
+            //    }
+
+            //    finalSpadPredictor = (count > 0) ? (sum / count) : 0;
+            //}
+            //else
+            //{
+            //    // Nem talált növényt a képen
+            //    finalSpadPredictor = 0;
+            //}
+            #endregion
+            // EZT AZ ÉRTÉKET használd a regresszióhoz és a méréshez is!
+            // double estimatedSPAD = m * finalSpadPredictor + b;
+            #region regi spad 
+
+
+            //Cv2.MeanStdDev(NGRDI, out Scalar mgrviMeanRaw, out Scalar mgrviStdRaw, plantMask);
+            //double? spadValue = null;
 
 
 
-            // SPAD = A * Index + B
-            spadValue = (PlantProfile.SpadSlope * mgrviMeanRaw.Val0) + PlantProfile.SpadIntercept;
+            //// SPAD = A * Index + B
+            //spadValue = (PlantProfile.SpadSlope * mgrviMeanRaw.Val0) + PlantProfile.SpadIntercept;
 
-            if (spadValue < 0) spadValue = 0;
-
+            //if (spadValue < 0) spadValue = 0;
+            #endregion
             var stats = new Snapshot
             {
                 Timestamp = DateTime.Now,
@@ -89,7 +154,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 ViMean = meanRaw.Val0,
                 ViStdDev = stdRaw.Val0,
                 PlantAreaPercentage = plantAreaPercentage,
-                SpadEstimate = spadValue
+               
             };
 
             return new ProcessingResult
@@ -129,6 +194,15 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             channels[1].ConvertTo(g, MatType.CV_32F); // Green
             channels[2].ConvertTo(r, MatType.CV_32F); // Red
 
+            using Mat sum = b + g + r;
+            // Hozzáadunk egy picit, hogy ne osszunk nullával
+            using Mat sumSafe = sum + new Scalar(0.001);
+
+            // Kiszámoljuk a kisbetűs r, g, b értékeket (0..1 között lesznek)
+            using Mat rNorm = r / sumSafe;
+            using Mat gNorm = g / sumSafe;
+            using Mat bNorm = b / sumSafe;
+
             foreach (var c in channels) c.Dispose(); //nincs szukseg a csatornakra mar
 
             // Az eredményt tároló mátrix
@@ -137,24 +211,24 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             {
                 case VegetationIndex.ExG:
                     // ExG = 2*G - R - B
-                    using (Mat g2 = g * 2)
-                    using (Mat diff = g2 - r)
-                        Cv2.Subtract(diff, b, result);
+                    using (Mat g2 = gNorm * 2)
+                    using (Mat diff = g2 - rNorm)
+                        Cv2.Subtract(diff, bNorm, result);
                     break;
 
                 case VegetationIndex.ExGR:
                     // ExGR = ExG - ExR = (2G-R-B) - (1.4R-B)
                     // ExR = 1.4*R - G 
-                    using (Mat exg = (g * 2) - r - b)
-                    using (Mat exr = (r * 1.4) - g)
+                    using (Mat exg = (gNorm * 2) - rNorm - bNorm)
+                    using (Mat exr = (rNorm * 1.4) - gNorm)
                         Cv2.Subtract(exg, exr, result);
                     break;
                 case VegetationIndex.VARI:
                     // VARI = (G - R) / (G + R - B)
 
-                    using (Mat num = g - r)
-                    using (Mat den1 = g + r)
-                    using (Mat den2 = den1 - b)
+                    using (Mat num = gNorm - rNorm)
+                    using (Mat den1 = gNorm + rNorm)
+                    using (Mat den2 = den1 - bNorm)
                     {
                         //nem szall el vegetelnbe
                         using (Mat denSafe = den2 + new Scalar(0.0000001))
@@ -177,26 +251,26 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
                 case VegetationIndex.NGRDI:
                     // NGRDI = (G - R) / (G + R)
-                    using (Mat num = g - r)
-                    using (Mat den = g + r)
+                    using (Mat num = gNorm - rNorm)
+                    using (Mat den = gNorm + rNorm)
                         Cv2.Divide(num, den, result);
                     break;
 
                 case VegetationIndex.GLI:
                     // GLI = (2G - R - B) / (2G + R + B)
-                    using (Mat g2 = g * 2)
-                    using (Mat num1 = g2 - r)
-                    using (Mat num = num1 - b)
-                    using (Mat den1 = g2 + r)
-                    using (Mat den = den1 + b)
+                    using (Mat g2 = gNorm * 2)
+                    using (Mat num1 = g2 - rNorm)
+                    using (Mat num = num1 - bNorm)
+                    using (Mat den1 = g2 + rNorm)
+                    using (Mat den = den1 + bNorm)
                         Cv2.Divide(num, den, result);
                     break;
 
                 case VegetationIndex.TGI:
                     // TGI = G - 0.39*R - 0.61*B
-                    using (Mat rW = r * 0.39)
-                    using (Mat bW = b * 0.61)
-                    using (Mat sub1 = g - rW)
+                    using (Mat rW = rNorm * 0.39)
+                    using (Mat bW = bNorm * 0.61)
+                    using (Mat sub1 = gNorm - rW)
                         Cv2.Subtract(sub1, bW, result);
                     break;
                 case VegetationIndex.MGRVI:
@@ -204,8 +278,8 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     using (Mat g2 = new Mat())
                     using (Mat r2 = new Mat())
                     {
-                        Cv2.Pow(g, 2, g2);
-                        Cv2.Pow(r, 2, r2);
+                        Cv2.Pow(gNorm, 2, g2);
+                        Cv2.Pow(rNorm, 2, r2);
 
                         using (Mat num = g2 - r2)
                         using (Mat den = g2 + r2)
@@ -221,9 +295,9 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
                 default:
                     // Fallback: ExG
-                    using (Mat g2 = g * 2)
-                    using (Mat diff = g2 - r)
-                        Cv2.Subtract(diff, b, result);
+                    using (Mat g2 = gNorm * 2)
+                    using (Mat diff = g2 - rNorm)
+                        Cv2.Subtract(diff, bNorm, result);
                     break;
             }
 
@@ -249,7 +323,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
 
 
-            FilterSmallBlobs(preMask, 200);
+          FilterSmallBlobs(preMask, 200);
 
 
             int totalPixels = preMask.Rows * preMask.Cols;
