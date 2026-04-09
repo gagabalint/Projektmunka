@@ -80,7 +80,14 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 if (readSuccess && !frame.Empty())
                 {
                     // vmnek jelzes a keprol.
-                  
+                    //nagy felbontású videó downscaling
+                    if (frame.Width > 1280)
+                    {
+                        double scale = 1280.0 / frame.Width;
+                        int newHeight = (int)(frame.Height * scale);
+
+                        Cv2.Resize(frame, frame, new OpenCvSharp.Size(1280, newHeight));
+                    }
                     FrameCaptured?.Invoke(this, frame.Clone());
                 }
                 else
@@ -95,7 +102,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 }
 
                 // Kb. 30 FPS 
-                Thread.Sleep(33);
+                Thread.Sleep(15);
             }
         }
 

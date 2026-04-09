@@ -21,14 +21,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 {
     public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
-
-
-
-
-       
-
-
-
+        #region fields and props
         private readonly IImageProcessingService imageProcessor;
         private readonly IDatabaseService databaseService;
         private readonly ICameraService cameraService;
@@ -73,6 +66,14 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         [ObservableProperty]
         private string statusMessage = "Ready";
 
+        [ObservableProperty]
+        private double minThreshold = 0.0;
+
+        [ObservableProperty]
+        private double maxThreshold = 1.0;
+        [ObservableProperty]
+        private bool isHotspotFilterEnabled;
+        #endregion
         public MainWindowViewModel(IImageProcessingService imageProcessor, IDatabaseService databaseService, ICameraService cameraService)
         {
             this.cameraService = cameraService;
@@ -136,7 +137,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             {
                 using (frame)
                 {
-                    var result = await imageProcessor.ProcessImageAsync(frame, SelectedIndex);
+                    var result = await imageProcessor.ProcessImageAsync(frame, MinThreshold, MaxThreshold, IsHotspotFilterEnabled, SelectedIndex);
 
                     try
                     {
@@ -297,7 +298,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             {
                 try
                 {
-                    result = await imageProcessor.ProcessImageAsync(currentFilePath, SelectedIndex);
+                    result = await imageProcessor.ProcessImageAsync(currentFilePath, MinThreshold,MaxThreshold,IsHotspotFilterEnabled, SelectedIndex);
                 }
                 catch (Exception ex)
                 {
@@ -353,7 +354,6 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
             return files.Count > 0 ? files[0] : null;
         }
-
 
     }
 }

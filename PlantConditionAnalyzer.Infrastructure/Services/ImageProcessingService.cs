@@ -14,7 +14,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 {
     public class ImageProcessingService : IImageProcessingService
     {
-        public async Task<ProcessingResult> ProcessImageAsync(string imagePath, VegetationIndex indexType = VegetationIndex.ExG)
+        public async Task<ProcessingResult> ProcessImageAsync(string imagePath, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
         {
             return await Task.Run(() =>
               {
@@ -24,21 +24,21 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                   {
                       throw new Exception($"Cannot read image file: {imagePath}");
                   }
-                  return ProcessMat(rawOriginal, indexType);
+                  return ProcessMat(rawOriginal, minThreshold, maxThreshold, isHotspotFilterEnabled, indexType);
               });
         }
-        public async Task<ProcessingResult> ProcessImageAsync(Mat frame, VegetationIndex indexType = VegetationIndex.ExG)
+        public async Task<ProcessingResult> ProcessImageAsync(Mat frame, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
         {
             return await Task.Run(() =>
             {
                 using Mat frameClone = frame.Clone();
 
-                return ProcessMat(frameClone, indexType);
+                return ProcessMat(frameClone, minThreshold, maxThreshold, isHotspotFilterEnabled, indexType);
             });
         }
-        private ProcessingResult ProcessMat(Mat rawOriginal, VegetationIndex indexType = VegetationIndex.ExG)
+        private ProcessingResult ProcessMat(Mat rawOriginal, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
         {
-            double toCut = 0.1;
+            double toCut = 0.05;
             using Mat original = ApplyROI(rawOriginal, toCut);
 
             using Mat plantMask = GetSegmentationMask(original);
@@ -74,23 +74,52 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             using Mat shifted = rawIndexMap - new Scalar(theoreticalMin);
             double scale = 255.0 / (theoreticalMax - theoreticalMin);
             shifted.ConvertTo(normalizedIndexMap, MatType.CV_8U, scale);
+            using Mat finalMask = new Mat();
 
-            using Mat heatmap = new Mat();
+            if (isHotspotFilterEnabled)
+            {
+                using Mat hotspotMask = new Mat();
+                // Csak azok a pixelek lesznek fehérek, amik a csúszka értékei közé esnek (a nyers index térképen!)
+                Cv2.InRange(rawIndexMap, new Scalar(minThreshold), new Scalar(maxThreshold), hotspotMask);
+
+                // A végső maszk a növény maszk ÉS a hotspot maszk közös metszete
+                Cv2.BitwiseAnd(plantMask, hotspotMask, finalMask);
+            }
+            else { plantMask.CopyTo(finalMask); }
+
+
+                using Mat heatmap = new Mat();
             Cv2.ApplyColorMap(normalizedIndexMap, heatmap, ColormapTypes.Turbo);
 
-            // Maszkolás
-            using Mat maskedHeatmap = Mat.Zeros(original.Size(), original.Type());
-            heatmap.CopyTo(maskedHeatmap, plantMask);
 
-            // Összefésülés
-            using Mat maskedOriginal = new Mat();
-            original.CopyTo(maskedOriginal, plantMask);
-            using Mat finalImage = new Mat();
-            Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
-            double rows = plantMask.Rows*(1 - 2 * toCut);
-            double cols = plantMask.Cols*(1 - 2 * toCut);
-        
-            double wholeArea = rows*cols;
+            using Mat finalImage = original.Clone();
+
+            // 2. Létrehozunk egy 50-50%-os áttetsző képet (eredeti + hőtérkép)
+            using Mat blendedHeatmap = new Mat();
+            Cv2.AddWeighted(original, 0.5, heatmap, 0.5, 0, blendedHeatmap);
+
+            // 3. A trükk: A hőtérképes verziót CSAK ODA bélyegezzük rá az eredeti képre,
+            // amit a finalMask megenged (tehát csak a hotspotra, vagy az egész növényre)
+            blendedHeatmap.CopyTo(finalImage, finalMask);
+
+
+            double rows = plantMask.Rows * (1 - 2 * toCut);
+            double cols = plantMask.Cols * (1 - 2 * toCut);
+
+
+            //// Maszkolás
+            //using Mat maskedHeatmap = Mat.Zeros(original.Size(), original.Type());
+            //heatmap.CopyTo(maskedHeatmap, finalMask);
+
+            //// Összefésülés
+            //using Mat maskedOriginal = new Mat();
+            //original.CopyTo(maskedOriginal, plantMask);
+            //using Mat finalImage = new Mat();
+            //Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
+            //double rows = plantMask.Rows * (1 - 2 * toCut);
+            //double cols = plantMask.Cols * (1 - 2 * toCut);
+
+            double wholeArea = rows * cols;
             // Statisztikák
             double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / wholeArea * 100.0;
             Cv2.MeanStdDev(rawIndexMap, out Scalar meanRaw, out Scalar stdRaw, plantMask);
@@ -306,7 +335,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     Cv2.Threshold(result, result, 1.0, 1.0, ThresholdTypes.Trunc);
 
                     // Minden, ami -1.0-nál kisebb, legyen -1.0
-           
+
                     using (Mat lowerBound = new Mat(result.Size(), MatType.CV_32F, new Scalar(-1.0)))
                     {
                         Cv2.Max(result, lowerBound, result);
@@ -387,7 +416,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
 
 
-          FilterSmallBlobs(preMask, 200);
+            FilterSmallBlobs(preMask, 200);
 
 
             int totalPixels = preMask.Rows * preMask.Cols;
@@ -464,7 +493,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         }
         private Mat ApplyROI(Mat original, double marginPercent)
         {
-            int marginX = (int)(original.Cols * marginPercent );
+            int marginX = (int)(original.Cols * marginPercent);
             int marginY = (int)(original.Rows * marginPercent);
 
             // Létrehozunk egy fekete maszkot
