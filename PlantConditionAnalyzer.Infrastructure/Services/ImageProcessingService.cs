@@ -14,6 +14,27 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 {
     public class ImageProcessingService : IImageProcessingService
     {
+        public bool IsRecording { get; private set; } = false;
+        private VideoWriter videoWriter;
+        string setName = "Error";
+        public void ToggleRecording(string projectName)
+        {
+            if (IsRecording)
+            {
+                // Ha be volt kapcsolva, leállítjuk és lezárjuk a fájlt
+                IsRecording = false;
+                videoWriter?.Release();
+                videoWriter?.Dispose();
+                videoWriter = null;
+            }
+            else
+            {
+                // Bekapcsoljuk (a fájlt magát az első frame-nél hozzuk létre, hogy tudjuk a pontos felbontást!)
+                setName = projectName;
+                IsRecording = true;
+            }
+        }
+
         public async Task<ProcessingResult> ProcessImageAsync(string imagePath, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
         {
             return await Task.Run(() =>
@@ -69,12 +90,11 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     theoreticalMax = 2.0;
                     break;
             }
+          
 
-            // Manuális normalizálás [theoreticalMin, theoreticalMax] → [0, 255]
-            using Mat shifted = rawIndexMap - new Scalar(theoreticalMin);
-            double scale = 255.0 / (theoreticalMax - theoreticalMin);
-            shifted.ConvertTo(normalizedIndexMap, MatType.CV_8U, scale);
-            using Mat finalMask = new Mat();
+          
+
+              using Mat finalMask = new Mat(); 
 
             if (isHotspotFilterEnabled)
             {
@@ -86,11 +106,42 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 Cv2.BitwiseAnd(plantMask, hotspotMask, finalMask);
             }
             else { plantMask.CopyTo(finalMask); }
+            
 
 
-                using Mat heatmap = new Mat();
-            Cv2.ApplyColorMap(normalizedIndexMap, heatmap, ColormapTypes.Turbo);
+           
+            #region nasa teszt xdd
+            // 1. TÉNYLEGES ADATOK KISZÁMÍTÁSA (Csak a növényen belül!)
+           
+            Cv2.MeanStdDev(rawIndexMap, out Scalar mean, out Scalar stddev, plantMask);
 
+            double actualMean = mean.Val0;
+            double actualStdDev = stddev.Val0;
+
+            // 2. A "Hasznos Sáv" kijelölése: Átlag ± 2-szeres szórás (Ez lefedi az adatok 95%-át, és eldobja a hibás kiugrókat)
+            double displayMin = actualMean - (2.0 * actualStdDev);
+            double displayMax = actualMean + (2.0 * actualStdDev);
+
+            // Biztonsági ellenőrzés (nehogy nullával osszunk, ha egyszínű a kép)
+            if (displayMax - displayMin < 0.0001) displayMax = displayMin + 0.0001;
+
+            // 3. KONVERTÁLÁS ÉS SZÍNEZÉS (A Varázslat)
+
+            // Kiszámoljuk az átskálázás szorzóit
+            double alphaScale = 255.0 / (displayMax - displayMin);
+            double betaShift = -displayMin * alphaScale;
+
+            // A ConvertTo CV_8U esetén automatikusan "levágja" (clamp) a túllógó értékeket 0 és 255-nél!
+            rawIndexMap.ConvertTo(normalizedIndexMap, MatType.CV_8U, alphaScale, betaShift);
+
+            // 4. Színek megfordítása (Hogy a beteg/alacsony érték legyen a PIROS Hotspot)
+            using Mat invertedNormalized = new Mat();
+            Cv2.Subtract(new Scalar(255), normalizedIndexMap, invertedNormalized, plantMask);
+
+            // 5. Végleges hőtérkép
+            using Mat heatmap = new Mat();
+            Cv2.ApplyColorMap(invertedNormalized, heatmap, ColormapTypes.Turbo);
+            #endregion
 
             using Mat finalImage = original.Clone();
 
@@ -100,24 +151,31 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             // 3. A trükk: A hőtérképes verziót CSAK ODA bélyegezzük rá az eredeti képre,
             // amit a finalMask megenged (tehát csak a hotspotra, vagy az egész növényre)
-            blendedHeatmap.CopyTo(finalImage, finalMask);
+            blendedHeatmap.CopyTo(finalImage, finalMask); 
 
+            if (IsRecording)
+            {
+                if (videoWriter == null)
+                {
+                    // Ez csak az ELSŐ rögzített képkockánál fut le: létrehozza az .mp4 fájlt
+                    string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PlantConditionAnalyzer", "Recordings");
+                    Directory.CreateDirectory(folder); // Biztosítjuk, hogy a mappa létezzen
+                    string recPath = Path.Combine(folder, setName);
+                    if (!Directory.Exists(recPath)) Directory.CreateDirectory(recPath);
+                    string file = Path.Combine(recPath, $"Record_{DateTime.Now:yyyyMMdd_HHmmss}_{setName}.mp4");
 
+                    // MP4V codec, 20 FPS (ehhez igazítottuk a lejátszást is)
+                    videoWriter = new VideoWriter(file, FourCC.MP4V, 10.0, finalImage.Size());
+                }
+
+                // Beírjuk a kész, színezett képkockát a videófájlba
+                videoWriter.Write(finalImage);
+            }
             double rows = plantMask.Rows * (1 - 2 * toCut);
             double cols = plantMask.Cols * (1 - 2 * toCut);
 
 
-            //// Maszkolás
-            //using Mat maskedHeatmap = Mat.Zeros(original.Size(), original.Type());
-            //heatmap.CopyTo(maskedHeatmap, finalMask);
 
-            //// Összefésülés
-            //using Mat maskedOriginal = new Mat();
-            //original.CopyTo(maskedOriginal, plantMask);
-            //using Mat finalImage = new Mat();
-            //Cv2.AddWeighted(maskedOriginal, 1.0, maskedHeatmap, 0.5, 0, finalImage);
-            //double rows = plantMask.Rows * (1 - 2 * toCut);
-            //double cols = plantMask.Cols * (1 - 2 * toCut);
 
             double wholeArea = rows * cols;
             // Statisztikák

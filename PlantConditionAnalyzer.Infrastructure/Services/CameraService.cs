@@ -81,12 +81,12 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 {
                     // vmnek jelzes a keprol.
                     //nagy felbontású videó downscaling
-                    if (frame.Width > 1280)
+                    if (frame.Width > 900)
                     {
-                        double scale = 1280.0 / frame.Width;
+                        double scale = 900.0 / frame.Width;
                         int newHeight = (int)(frame.Height * scale);
 
-                        Cv2.Resize(frame, frame, new OpenCvSharp.Size(1280, newHeight));
+                        Cv2.Resize(frame, frame, new OpenCvSharp.Size(900, newHeight));
                     }
                     FrameCaptured?.Invoke(this, frame.Clone());
                 }

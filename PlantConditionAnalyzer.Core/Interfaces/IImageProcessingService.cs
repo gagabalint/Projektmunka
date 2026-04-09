@@ -12,8 +12,11 @@ namespace PlantConditionAnalyzer.Core.Interfaces
 {
     public interface IImageProcessingService
     {
+        bool IsRecording { get; }
         Task<ProcessingResult> ProcessImageAsync(string imagePath, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex vegetationIndex=VegetationIndex.ExG );
         Task<ProcessingResult> ProcessImageAsync(Mat frame, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex vegetationIndex=VegetationIndex.ExG);
+        public void ToggleRecording(string projectName);
         byte[] GenerateColormapLegend();
+
     }
 }

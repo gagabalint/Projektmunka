@@ -12,8 +12,11 @@ using PlantConditionAnalyzer.Core.Interfaces;
 using PlantConditionAnalyzer.Core.Models;
 using PlantConditionAnalyzer.Infrastructure.Services;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -27,7 +30,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         private readonly ICameraService cameraService;
 
         private string? currentFilePath;
-
+        private string appPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PlantConditionAnalyzer");
 
         private bool isProcessingFrame = false;//overload vedelem
         private int frameCounter = 0;
@@ -73,6 +76,32 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         private double maxThreshold = 1.0;
         [ObservableProperty]
         private bool isHotspotFilterEnabled;
+
+        [ObservableProperty]
+        private string _recordButtonText = "Start Recording";
+
+        [ObservableProperty]
+        private string _recordButtonColor = "#d32f2f"; // Alapból piros gomb
+
+        [RelayCommand]
+        private void ToggleRecording()
+        {
+            // Szólunk a szerviznek, hogy váltson állapotot
+            imageProcessor.ToggleRecording(SelectedProject!.Name);
+
+            if (imageProcessor.IsRecording)
+            {
+                RecordButtonText = "Stop Recording";
+                RecordButtonColor = "#424242"; // Szürkére vált, ha rögzít
+                StatusMessage = "Video recording started...";
+            }
+            else
+            {
+                RecordButtonText = "Start Recording";
+                RecordButtonColor = "#d32f2f"; // Vissza pirosra
+                StatusMessage = "Record saved to Recordings";
+            }
+        }
         #endregion
         public MainWindowViewModel(IImageProcessingService imageProcessor, IDatabaseService databaseService, ICameraService cameraService)
         {
@@ -89,7 +118,14 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
             LoadProjectsAsync();
         }
-
+        [RelayCommand]
+        private async Task Remeasure()
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                await ProcessCurrentFileAsync();
+            }
+        }
 
         [RelayCommand]
         private void ToggleCamera()
@@ -226,13 +262,18 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             StatusMessage = "Saving";
             try
             {
-                string imagesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PlantConditionAnalyzer_Images");
+                string imagesDir = Path.Combine(appPath, "Images");
                 if (!Directory.Exists(imagesDir))
                 {
                     Directory.CreateDirectory(imagesDir);
                 }
-                string fileName = $"Img_{DateTime.Now:yyyyMMdd_HHmmss}_{SelectedProject.Id}.png";
-                string imgPath = Path.Combine(imagesDir, fileName);
+                string setPath = Path.Combine(imagesDir, SelectedProject.Name);
+                if (!Directory.Exists(setPath))
+                {
+                    Directory.CreateDirectory(setPath);
+                }
+                string fileName = $"Img_{DateTime.Now:yyyyMMdd_HHmmss}_{SelectedProject.Name}.png";
+                string imgPath = Path.Combine(setPath, fileName);
 
                 if (resultToSave.ProcessedImageBytes != null)
                 {
@@ -286,6 +327,20 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             StatusMessage = $"Image processed with {SelectedIndex}";
         }
 
+        [RelayCommand]
+        private async Task ExportCurrentProject()
+        {
+            if (SelectedProject == null || string.IsNullOrEmpty(SelectedProject.Name)) return;
+            try
+            {
+                StatusMessage = $"Export in progress ({SelectedProject.Name})";
+                var query = await databaseService.GetSnapshotsForSetAsync(SelectedProject.Id);
+                if (!query.Any())
+                { StatusMessage = $"No saved data found in {SelectedProject.Name}"; return; }
+                CsvWriter(query);
+            }
+            catch (Exception ex) { StatusMessage = $"Error in export process: {ex.Message}"; }
+        }
         private async Task ProcessCurrentFileAsync()
         {
             if (string.IsNullOrEmpty(currentFilePath)) return;
@@ -298,7 +353,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             {
                 try
                 {
-                    result = await imageProcessor.ProcessImageAsync(currentFilePath, MinThreshold,MaxThreshold,IsHotspotFilterEnabled, SelectedIndex);
+                    result = await imageProcessor.ProcessImageAsync(currentFilePath, MinThreshold, MaxThreshold, IsHotspotFilterEnabled, SelectedIndex);
                 }
                 catch (Exception ex)
                 {
@@ -328,14 +383,14 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         private async Task<IStorageFile?> GetFilePickerAsync()
         {
             // Az Avalonia megköveteli hogy a file dialogue a legfelso ablakon nyiljon, ezert kell a topLevel
-            
+
             var topLevel = (App.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow; if (topLevel == null) return null;
 
             var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
                 Title = "Válassz egy képet a feldolgozáshoz",
                 AllowMultiple = false,
-                FileTypeFilter = new[] { FilePickerFileTypes.ImageAll } 
+                FileTypeFilter = new[] { FilePickerFileTypes.ImageAll }
             });
 
             return files.Count >= 1 ? files[0] : null;
@@ -355,5 +410,37 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             return files.Count > 0 ? files[0] : null;
         }
 
+        private void CsvWriter(List<Snapshot> query)
+        {
+            string exportFolder = Path.Combine(appPath, "Exports");
+            if (!Directory.Exists(exportFolder))
+            {
+                Directory.CreateDirectory(exportFolder);
+            }
+            string setPath = Path.Combine(exportFolder, SelectedProject!.Name);
+            if (!Directory.Exists(setPath))
+            {
+                Directory.CreateDirectory(setPath);
+            }
+            string fileName = $"{SelectedProject!.Name}_Export_{DateTime.Now:yyyyMMdd_HHmm}.csv";
+            string filePath = Path.Combine(setPath, fileName);
+
+            // 5. Fájlba írás
+            using (StreamWriter sw = new StreamWriter(filePath, false, Encoding.UTF8))
+            {
+                sw.WriteLine("ID;Date;Index Type;Avg;Dev;Plant Area(%)");
+
+                foreach (var snap in query)
+                {
+                    string date = snap.Timestamp.ToString("yyyy.MM.dd HH:mm:ss");
+                    string mean = snap.ViMean.ToString("F10");
+                    string std = snap.ViStdDev.ToString("F10");
+                    string area = snap.PlantAreaPercentage.ToString("F2");
+
+                    sw.WriteLine($"{snap.Id};{date};{snap.VegetationIndexName};{mean};{std};{area}");
+                }
+            }
+            StatusMessage = $"Succesful export: {fileName}";
+        }
     }
 }

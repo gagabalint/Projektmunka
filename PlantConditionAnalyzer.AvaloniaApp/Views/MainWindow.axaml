@@ -14,7 +14,7 @@
 	</Design.DataContext>
 
 	<Grid RowDefinitions="Auto, *, Auto">
-<Border Grid.Row="0"
+		<Border Grid.Row="0"
 				Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
 				BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
 				BorderThickness="0 0 0 1"
@@ -23,7 +23,7 @@
 			<Grid ColumnDefinitions="*, Auto">
 
 				<WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-					
+
 					<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
 						<TextBlock Text="Project:" VerticalAlignment="Center" FontWeight="Bold"/>
 						<ComboBox ItemsSource="{Binding Projects}"
@@ -34,39 +34,56 @@
 						<TextBox Text="{Binding NewProjectName}" Watermark="New Name" Width="120"/>
 						<Button Content="+" Command="{Binding CreateProjectCommand}"/>
 					</StackPanel>
+					<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
 
+						<Button Content="Export Project"
+								Command="{Binding ExportCurrentProjectCommand}"
+								IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+								Background="#1976d2" Foreground="White" FontWeight="Bold"
+								ToolTip.Tip="Csak a kiválasztott projekt adatainak kimentése"/>
+
+
+
+					</StackPanel>
 					<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
 						<Button Content="Open Image" Command="{Binding LoadImageCommand}"/>
 						<Button Content="Load Video" Command="{Binding LoadVideoCommand}"/>
 						<Button Content="Toggle Camera" Command="{Binding ToggleCameraCommand}"/>
+						<Button Content="{Binding RecordButtonText}"
+								Command="{Binding ToggleRecordingCommand}"
+								Background="{Binding RecordButtonColor}"
+								Foreground="White" FontWeight="Bold"/>
 					</StackPanel>
 
 					<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
-						<ComboBox ItemsSource="{Binding AvailableIndices}" 
+						<ComboBox ItemsSource="{Binding AvailableIndices}"
 								  SelectedItem="{Binding SelectedIndex}"
 								  Width="100"/>
+						<Button Content="Remeasure"
+								Command="{Binding RemeasureCommand}"
+								/>
 						<Button Content="Save Result"
 								Command="{Binding SaveMeasurementCommand}"
 								IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-								Background="#2e7d32" Foreground="White" FontWeight="Bold"/> 
+								Background="#2e7d32" Foreground="White" FontWeight="Bold"/>
 					</StackPanel>
 				</WrapPanel>
 
 				<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20" VerticalAlignment="Center">
-					
+
 					<StackPanel Spacing="5" VerticalAlignment="Center">
-						<CheckBox Content="Hotspot Filter" 
-								  IsChecked="{Binding IsHotspotFilterEnabled}" 
+						<CheckBox Content="Hotspot Filter"
+								  IsChecked="{Binding IsHotspotFilterEnabled}"
 								  FontWeight="Bold"/>
-						
+
 						<StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsHotspotFilterEnabled}">
 							<StackPanel>
 								<TextBlock Text="{Binding MinThreshold, StringFormat='Min: {0:F2}'}" FontSize="12"/>
-								<Slider Minimum="-1.0" Maximum="1.0" Value="{Binding MinThreshold}" SmallChange="0.05" LargeChange="0.1" Width="100"/>
+								<Slider Minimum="-1.0" Maximum="1.0" Value="{Binding MinThreshold}" SmallChange="0.01" TickFrequency="0.01" LargeChange="0.1" Width="200"/>
 							</StackPanel>
 							<StackPanel>
 								<TextBlock Text="{Binding MaxThreshold, StringFormat='Max: {0:F2}'}" FontSize="12"/>
-								<Slider Minimum="-1.0" Maximum="1.0" Value="{Binding MaxThreshold}" SmallChange="0.05" LargeChange="0.1" Width="100"/>
+								<Slider Minimum="-1.0" Maximum="1.0" Value="{Binding MaxThreshold}" SmallChange="0.01" TickFrequency="0.01" LargeChange="0.1" Width="200"/>
 							</StackPanel>
 						</StackPanel>
 					</StackPanel>
@@ -77,11 +94,11 @@
 							<Image Source="{Binding ColormapLegend}" Width="120" Height="15" Stretch="Fill"/>
 						</Border>
 						<Grid>
-							<TextBlock Text="Low" HorizontalAlignment="Left" FontSize="10"/>
-							<TextBlock Text="High" HorizontalAlignment="Right" FontSize="10"/>
+							<TextBlock Text="High" HorizontalAlignment="Left" FontSize="10"/>
+							<TextBlock Text="Low" HorizontalAlignment="Right" FontSize="10"/>
 						</Grid>
 					</StackPanel>
-					
+
 				</StackPanel>
 			</Grid>
 		</Border>

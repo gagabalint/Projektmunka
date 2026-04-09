@@ -16,7 +16,9 @@ namespace PlantConditionAnalyzer.Infrastructure.Persistence
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            string dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PlantConditionAnalyzer_Data.db");
+            string appPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PlantConditionAnalyzer");
+            if(!Directory.Exists(appPath)) Directory.CreateDirectory(appPath);
+            string dbPath = Path.Combine(appPath, "PlantConditionAnalyzer_Data.db");
             optionsBuilder.UseSqlite($"Data Source={dbPath}");
         }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
