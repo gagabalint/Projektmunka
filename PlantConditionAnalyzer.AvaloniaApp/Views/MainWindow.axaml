@@ -59,9 +59,7 @@
 						<ComboBox ItemsSource="{Binding AvailableIndices}"
 								  SelectedItem="{Binding SelectedIndex}"
 								  Width="100"/>
-						<Button Content="Remeasure"
-								Command="{Binding RemeasureCommand}"
-								/>
+					
 						<Button Content="Save Result"
 								Command="{Binding SaveMeasurementCommand}"
 								IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
@@ -77,14 +75,20 @@
 								  FontWeight="Bold"/>
 
 						<StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsHotspotFilterEnabled}">
-							<StackPanel>
+							<!--<StackPanel>
 								<TextBlock Text="{Binding MinThreshold, StringFormat='Min: {0:F2}'}" FontSize="12"/>
 								<Slider Minimum="-1.0" Maximum="1.0" Value="{Binding MinThreshold}" SmallChange="0.01" TickFrequency="0.01" LargeChange="0.1" Width="200"/>
 							</StackPanel>
 							<StackPanel>
 								<TextBlock Text="{Binding MaxThreshold, StringFormat='Max: {0:F2}'}" FontSize="12"/>
 								<Slider Minimum="-1.0" Maximum="1.0" Value="{Binding MaxThreshold}" SmallChange="0.01" TickFrequency="0.01" LargeChange="0.1" Width="200"/>
-							</StackPanel>
+							</StackPanel>-->
+							<StackPanel><Slider Minimum="{Binding DataMin}" 
+        Maximum="{Binding DataMax}" 
+        SmallChange="{Binding SliderStep}" 
+        Value="{Binding MaxThreshold}" /> 
+        <TextBlock Text="{Binding HotspotPercentageText}" FontWeight="Bold" Foreground="Red" />
+								</StackPanel>
 						</StackPanel>
 					</StackPanel>
 

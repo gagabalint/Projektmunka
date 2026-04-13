@@ -17,6 +17,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         public bool IsRecording { get; private set; } = false;
         private VideoWriter videoWriter;
         string setName = "Error";
+        public event Action<HotspotData> OnStatisticsUpdated;
         public void ToggleRecording(string projectName)
         {
             if (IsRecording)
@@ -100,8 +101,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             {
                 using Mat hotspotMask = new Mat();
                 // Csak azok a pixelek lesznek fehérek, amik a csúszka értékei közé esnek (a nyers index térképen!)
-                Cv2.InRange(rawIndexMap, new Scalar(minThreshold), new Scalar(maxThreshold), hotspotMask);
-
+                Cv2.InRange(rawIndexMap, new Scalar(-100.0), new Scalar(maxThreshold), hotspotMask);
                 // A végső maszk a növény maszk ÉS a hotspot maszk közös metszete
                 Cv2.BitwiseAnd(plantMask, hotspotMask, finalMask);
             }
@@ -110,7 +110,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
 
            
-            #region nasa teszt xdd
+            
             // 1. TÉNYLEGES ADATOK KISZÁMÍTÁSA (Csak a növényen belül!)
            
             Cv2.MeanStdDev(rawIndexMap, out Scalar mean, out Scalar stddev, plantMask);
@@ -141,6 +141,21 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             // 5. Végleges hőtérkép
             using Mat heatmap = new Mat();
             Cv2.ApplyColorMap(invertedNormalized, heatmap, ColormapTypes.Turbo);
+            #region sliderteszt
+            int totalPlantPixels = Cv2.CountNonZero(plantMask);
+            int sickPixels = Cv2.CountNonZero(finalMask);
+
+            double sickPercentage = 0.0;
+            if (totalPlantPixels > 0 && isHotspotFilterEnabled)
+            {
+                sickPercentage = ((double)sickPixels / totalPlantPixels) * 100.0;
+            }
+
+            double sliderStep = (displayMax - displayMin) / 100.0;
+            if (sliderStep <= 0) sliderStep = 0.001; // Biztonsági minimum
+
+            // Szólunk a ViewModelnek a friss adatokkal!
+            OnStatisticsUpdated?.Invoke(new HotspotData(displayMin, displayMax, sliderStep, sickPercentage));
             #endregion
 
             using Mat finalImage = original.Clone();
@@ -179,6 +194,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             double wholeArea = rows * cols;
             // Statisztikák
+           // int sickPixels = Cv2.CountNonZero(finalHotspotMask);
             double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / wholeArea * 100.0;
             Cv2.MeanStdDev(rawIndexMap, out Scalar meanRaw, out Scalar stdRaw, plantMask);
 
@@ -189,6 +205,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 VegetationIndexName = indexType.ToString(),
                 ViMean = meanRaw.Val0,
                 ViStdDev = stdRaw.Val0,
+               // SickPercentage
                 PlantAreaPercentage = plantAreaPercentage,
             };
 

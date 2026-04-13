@@ -14,10 +14,12 @@ using PlantConditionAnalyzer.Infrastructure.Services;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
@@ -34,6 +36,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
         private bool isProcessingFrame = false;//overload vedelem
         private int frameCounter = 0;
+        private CancellationTokenSource? thresholdDebounceCts;
 
         private ProcessingResult? lastResult;
 
@@ -74,6 +77,21 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
         [ObservableProperty]
         private double maxThreshold = 1.0;
+
+
+        [ObservableProperty]
+        private double dataMin = -1.0;
+
+        [ObservableProperty]
+        private double dataMax = 1.0;
+
+        [ObservableProperty]
+        private double sliderStep = 0.01;
+
+        [ObservableProperty]
+        private string hotspotPercentageText = "Affected area: 0.00%";
+
+
         [ObservableProperty]
         private bool isHotspotFilterEnabled;
 
@@ -110,20 +128,61 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             this.databaseService = databaseService;
             cameraService.FrameCaptured += OnFrameCaptured;
             cameraService.ErrorOccurred += (s, msg) => StatusMessage = msg;
-
+            this.imageProcessor.OnStatisticsUpdated += UpdateUiData;
             statisticsText = "Select an image to process";
 
             var legendBytes = imageProcessor.GenerateColormapLegend();
             ColormapLegend = ConvertBytesToBitmap(legendBytes);
 
-            LoadProjectsAsync();
+            LoadProjectsAsync().GetAwaiter();
         }
-        [RelayCommand]
-        private async Task Remeasure()
+
+        // EZ FOG LEFUTNI, AMIKOR A SERVICE "KIABÁL"
+        private void UpdateUiData(HotspotData data)
         {
-            if (!string.IsNullOrEmpty(currentFilePath))
+            // Az UIThread.Post biztosítja, hogy ne fagyjon ki az Avalonia a háttérszál miatt
+            Dispatcher.UIThread.Post(() =>
             {
-                await ProcessCurrentFileAsync();
+                DataMin = data.Min;
+                DataMax = data.Max;
+                SliderStep = data.Step;
+
+                // Ha be van kapcsolva a szűrő, kiírjuk a százalékot
+                if (IsHotspotFilterEnabled)
+                {
+                    HotspotPercentageText = $"Affected area: {data.SickPercentage:F2}%";
+                }
+                else
+                {
+                    HotspotPercentageText = "Move the slider for results!";
+                }
+            });
+        }
+
+        private async Task DebouncedProcessAsync()
+        {
+            // 1. Ha már fut egy visszaszámláló (mert a felhasználó épp vadul húzza a csúszkát), lelőjük!
+            thresholdDebounceCts?.Cancel();
+
+            // 2. Indítunk egy ÚJ visszaszámlálót
+            thresholdDebounceCts = new CancellationTokenSource();
+            var token = thresholdDebounceCts.Token;
+
+            try
+            {
+                // 3. Várunk 150 milliszekundumot. (Ha ezalatt újra meghívják a függvényt, ez a Task elszáll egy Exceptionnel)
+                await Task.Delay(150, token);
+
+                // 4. Ha ide eljutottunk, az azt jelenti, hogy 150 ms-ig senki nem nyúlt a csúszkához! Mehet a matek!
+                if (!string.IsNullOrEmpty(currentFilePath))
+                {
+                    await ProcessCurrentFileAsync();
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                // A várakozás megszakadt, mert a felhasználó tovább húzta a csúszkát.
+                // Nem csinálunk semmit, szépen csendben lenyeljük a kivételt.
             }
         }
 
@@ -157,7 +216,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
             cameraService.Start(file.Path.LocalPath);
         }
-
+        
         private async void OnFrameCaptured(object? sender, Mat frame)
         {
             // Ha épp dolgozunk egy előző képen, ezt eldobjuk (hogy ne akadjon a UI)
@@ -174,7 +233,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                 using (frame)
                 {
                     var result = await imageProcessor.ProcessImageAsync(frame, MinThreshold, MaxThreshold, IsHotspotFilterEnabled, SelectedIndex);
-
+                    
                     try
                     {
                         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -229,11 +288,27 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
 
         }
+        async partial void OnMinThresholdChanged(double value)
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                await DebouncedProcessAsync();
+            }
+        }
+        async partial void OnMaxThresholdChanged(double value)
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                await DebouncedProcessAsync();
+            }
+        }
         async partial void OnSelectedIndexChanged(VegetationIndex value)
         {
             if (!string.IsNullOrEmpty(currentFilePath))
             {
+                
                 await ProcessCurrentFileAsync();
+
             }
         }
 
@@ -354,6 +429,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                 try
                 {
                     result = await imageProcessor.ProcessImageAsync(currentFilePath, MinThreshold, MaxThreshold, IsHotspotFilterEnabled, SelectedIndex);
+                    StatusMessage = $"Image processed with {SelectedIndex}";
                 }
                 catch (Exception ex)
                 {
