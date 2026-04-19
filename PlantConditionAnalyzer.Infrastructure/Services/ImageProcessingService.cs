@@ -8,16 +8,38 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-
 namespace PlantConditionAnalyzer.Infrastructure.Services
 {
     public class ImageProcessingService : IImageProcessingService
     {
         public bool IsRecording { get; private set; } = false;
-        private VideoWriter videoWriter;
-        string setName = "Error";
-        public event Action<HotspotData> OnStatisticsUpdated;
+        private VideoWriter? videoWriter;
+        string setName = string.Empty;
+        public event Action<HotspotData>? OnStatisticsUpdated;
+
+        // Cached resources to reduce per-frame allocations
+        private Mat? turboLUT;
+        private Mat? morphKernel;
+
+        // Mozgóátlag változói a villódzás ellen
+        private bool isFirstFrame = true;
+        private double smoothedMin = 0.0;
+        private double smoothedMax = 0.0;
+        private DateTime lastFrameTime = DateTime.MinValue; // EZ FOGJA AUTO-RESETELNI A KAMERÁT!
+        private readonly object initLock = new();
+        public bool UseFixedScale { get; set; } = false;
+        public double RoiMargin { get; set; } = 0.05;
+
+        private static readonly Dictionary<VegetationIndex, (double Dead, double Healthy, double SoftDead, double SoftHealthy, double MinRange)> FixedScales = new()
+            {
+                 { VegetationIndex.NGRDI, (-0.05,  0.20, -0.08,  0.25, 0.10) },
+                 { VegetationIndex.MGRVI, (-0.05,  0.20, -0.08,  0.25, 0.10) },
+                 { VegetationIndex.ExG,   ( 0.05,  0.40,  0.02,  0.55, 0.30) },
+                 { VegetationIndex.ExGR,  ( 0.05,  0.40,  0.02,  0.55, 0.30) },
+                 { VegetationIndex.VARI,  (-0.10,  0.20, -0.15,  0.30, 0.15) },
+                 { VegetationIndex.GLI,   (-0.10,  0.20, -0.15,  0.30, 0.15) },
+                 { VegetationIndex.TGI,   (-0.10,  0.20, -0.15,  0.30, 0.15) },
+            };
         public void ToggleRecording(string projectName)
         {
             if (IsRecording)
@@ -27,6 +49,8 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 videoWriter?.Release();
                 videoWriter?.Dispose();
                 videoWriter = null;
+                isFirstFrame = true;
+
             }
             else
             {
@@ -36,7 +60,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             }
         }
 
-        public async Task<ProcessingResult> ProcessImageAsync(string imagePath, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
+        public async Task<ProcessingResult> ProcessImageAsync(string imagePath,  double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
         {
             return await Task.Run(() =>
               {
@@ -46,21 +70,22 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                   {
                       throw new Exception($"Cannot read image file: {imagePath}");
                   }
-                  return ProcessMat(rawOriginal, minThreshold, maxThreshold, isHotspotFilterEnabled, indexType);
+                  return ProcessMat(rawOriginal,  maxThreshold, isHotspotFilterEnabled, false, indexType);
               });
+
         }
-        public async Task<ProcessingResult> ProcessImageAsync(Mat frame, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
+        public async Task<ProcessingResult> ProcessImageAsync(Mat frame,  double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
         {
             return await Task.Run(() =>
             {
                 using Mat frameClone = frame.Clone();
 
-                return ProcessMat(frameClone, minThreshold, maxThreshold, isHotspotFilterEnabled, indexType);
+                return ProcessMat(frameClone,  maxThreshold, isHotspotFilterEnabled, true, indexType);
             });
         }
-        private ProcessingResult ProcessMat(Mat rawOriginal, double minThreshold, double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex indexType = VegetationIndex.ExG)
+        private ProcessingResult ProcessMat(Mat rawOriginal,  double maxThreshold, bool isHotspotFilterEnabled, bool isContinuousStream, VegetationIndex indexType)
         {
-            double toCut = 0.05;
+            double toCut = RoiMargin;
             using Mat original = ApplyROI(rawOriginal, toCut);
 
             using Mat plantMask = GetSegmentationMask(original);
@@ -69,33 +94,8 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             // normalizálás fixált tartománnyal
             using Mat normalizedIndexMap = new();
-            double theoreticalMin, theoreticalMax;
 
-            switch (indexType)
-            {
-                case VegetationIndex.ExG:
-                case VegetationIndex.ExGR:
-                case VegetationIndex.TGI:
-                    theoreticalMin = -1.0;
-                    theoreticalMax = 2.0;
-                    break;
-                case VegetationIndex.MGRVI:
-                case VegetationIndex.VARI:
-                case VegetationIndex.NGRDI:
-                case VegetationIndex.GLI:
-                    theoreticalMin = -1.0;
-                    theoreticalMax = 1.0;
-                    break;
-                default:
-                    theoreticalMin = -1.0;
-                    theoreticalMax = 2.0;
-                    break;
-            }
-          
-
-          
-
-              using Mat finalMask = new Mat(); 
+            using Mat finalMask = new Mat();
 
             if (isHotspotFilterEnabled)
             {
@@ -106,29 +106,86 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 Cv2.BitwiseAnd(plantMask, hotspotMask, finalMask);
             }
             else { plantMask.CopyTo(finalMask); }
-            
 
 
-           
-            
-            // 1. TÉNYLEGES ADATOK KISZÁMÍTÁSA (Csak a növényen belül!)
-           
+
+
+            // ==========================================
+            // 1. TÉNYLEGES ADATOK KISZÁMÍTÁSA
+            // ==========================================
             Cv2.MeanStdDev(rawIndexMap, out Scalar mean, out Scalar stddev, plantMask);
+            double currentMean = mean.Val0;
+            double currentMin = currentMean - (2.0 * stddev.Val0);
+            double currentMax = currentMean + (2.0 * stddev.Val0);
 
-            double actualMean = mean.Val0;
-            double actualStdDev = stddev.Val0;
 
-            // 2. A "Hasznos Sáv" kijelölése: Átlag ± 2-szeres szórás (Ez lefedi az adatok 95%-át, és eldobja a hibás kiugrókat)
-            double displayMin = actualMean - (2.0 * actualStdDev);
-            double displayMax = actualMean + (2.0 * actualStdDev);
+            // SATU: Ha túl homogén a kép, szétnyitjuk a skálát az átlag körül
+            var s = FixedScales[indexType];
 
-            // Biztonsági ellenőrzés (nehogy nullával osszunk, ha egyszínű a kép)
+            // Fix módhoz: kemény határok
+            // Dinamikus módhoz: puha határok + stabilizátor
+            currentMin = Math.Max(currentMin, s.SoftDead);
+            currentMax = Math.Min(currentMax, s.SoftHealthy);
+
+            if (currentMax - currentMin < s.MinRange)
+            {
+                double center = (currentMax + currentMin) / 2.0;
+                currentMin = center - s.MinRange / 2.0;
+                currentMax = center + s.MinRange / 2.0;
+            }
+
+            currentMin = Math.Max(currentMin, s.SoftDead);
+            currentMax = Math.Min(currentMax, s.SoftHealthy);
+
+            // ==========================================
+            // 3. VIDEÓ SIMÍTÁS (A lusta skála)
+            // ==========================================
+            double displayMin, displayMax;
+
+            if (!isContinuousStream)
+            {
+                // Statikus képnél nincs simítás
+                displayMin = currentMin;
+                displayMax = currentMax;
+            }
+          /*  else*/ if (UseFixedScale)
+            {
+                displayMin = s.Dead;
+                displayMax = s.Healthy;
+
+            }
+            else
+            {
+                // Kameránál / Videónál mozgóátlag
+                if ((DateTime.Now - lastFrameTime).TotalMilliseconds > 500) isFirstFrame = true;
+                lastFrameTime = DateTime.Now;
+
+                if (isFirstFrame)
+                {
+                    smoothedMin = currentMin; smoothedMax = currentMax; isFirstFrame = false;
+                }
+                else
+                {
+                    double smoothedMean = (smoothedMax + smoothedMin) / 2.0;
+                    double deviation = Math.Abs(currentMean - smoothedMean);
+                    double alpha = (deviation > 0.05) ? 0.5 : 0.05;
+
+                    smoothedMin = (smoothedMin * (1.0 - alpha)) + (currentMin * alpha);
+                    smoothedMax = (smoothedMax * (1.0 - alpha)) + (currentMax * alpha);
+                }
+                displayMin = smoothedMin;
+                displayMax = smoothedMax;
+            }
+
+            // Biztonsági védelem
             if (displayMax - displayMin < 0.0001) displayMax = displayMin + 0.0001;
 
-            // 3. KONVERTÁLÁS ÉS SZÍNEZÉS (A Varázslat)
-
+            // ==========================================
+            // 4. KONVERTÁLÁS ÉS SZÍNEZÉS
+            // ==========================================
             // Kiszámoljuk az átskálázás szorzóit
             double alphaScale = 255.0 / (displayMax - displayMin);
+            // ... INNEN MEGY TOVÁBB A KÓDOD (betaShift, ConvertTo, stb.) ...
             double betaShift = -displayMin * alphaScale;
 
             // A ConvertTo CV_8U esetén automatikusan "levágja" (clamp) a túllógó értékeket 0 és 255-nél!
@@ -140,15 +197,28 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             // 5. Végleges hőtérkép
             using Mat heatmap = new Mat();
-            Cv2.ApplyColorMap(invertedNormalized, heatmap, ColormapTypes.Turbo);
-            #region sliderteszt
-            int totalPlantPixels = Cv2.CountNonZero(plantMask);
+            // Use a cached LUT (colormap) and apply via LUT to avoid recreating the colormap each frame
+            EnsureTurboLUT();
+            if (turboLUT != null)
+            {
+                // Cv2.LUT requires the source channels to match the LUT channels.
+                // Our LUT is 3-channel (BGR). Convert the single-channel grayscale to 3-channel first.
+                using Mat inverted3 = new Mat();
+                Cv2.CvtColor(invertedNormalized, inverted3, ColorConversionCodes.GRAY2BGR);
+                Cv2.LUT(inverted3, turboLUT, heatmap);
+            }
+            else
+            {
+                Cv2.ApplyColorMap(invertedNormalized, heatmap, ColormapTypes.Turbo);
+            }
+            #region slider
+            int plantPixels = Cv2.CountNonZero(plantMask);
             int sickPixels = Cv2.CountNonZero(finalMask);
 
             double sickPercentage = 0.0;
-            if (totalPlantPixels > 0 && isHotspotFilterEnabled)
+            if (plantPixels > 0 && isHotspotFilterEnabled)
             {
-                sickPercentage = ((double)sickPixels / totalPlantPixels) * 100.0;
+                sickPercentage = ((double)sickPixels / plantPixels) * 100.0;
             }
 
             double sliderStep = (displayMax - displayMin) / 100.0;
@@ -166,7 +236,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             // 3. A trükk: A hőtérképes verziót CSAK ODA bélyegezzük rá az eredeti képre,
             // amit a finalMask megenged (tehát csak a hotspotra, vagy az egész növényre)
-            blendedHeatmap.CopyTo(finalImage, finalMask); 
+            blendedHeatmap.CopyTo(finalImage, finalMask);
 
             if (IsRecording)
             {
@@ -194,18 +264,17 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             double wholeArea = rows * cols;
             // Statisztikák
-           // int sickPixels = Cv2.CountNonZero(finalHotspotMask);
-            double plantAreaPercentage = (double)Cv2.CountNonZero(plantMask) / wholeArea * 100.0;
-            Cv2.MeanStdDev(rawIndexMap, out Scalar meanRaw, out Scalar stdRaw, plantMask);
+            // int sickPixels = Cv2.CountNonZero(finalHotspotMask);
+            double plantAreaPercentage = (double)plantPixels / wholeArea * 100.0;
 
             var stats = new Snapshot
             {
                 Timestamp = DateTime.Now,
                 ImagePath = "n/a",
                 VegetationIndexName = indexType.ToString(),
-                ViMean = meanRaw.Val0,
-                ViStdDev = stdRaw.Val0,
-               // SickPercentage
+                ViMean = mean.Val0,
+                ViStdDev = stddev.Val0,
+                // SickPercentage
                 PlantAreaPercentage = plantAreaPercentage,
             };
 
@@ -347,7 +416,18 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             //Turbo szinezes
             using Mat colored = new Mat();
-            Cv2.ApplyColorMap(resized, colored, ColormapTypes.Turbo);
+            // Use cached turbo LUT if possible for consistent mapping
+            EnsureTurboLUT();
+            if (turboLUT != null)
+            {
+                using Mat resized3 = new Mat();
+                Cv2.CvtColor(resized, resized3, ColorConversionCodes.GRAY2BGR);
+                Cv2.LUT(resized3, turboLUT, colored);
+            }
+            else
+            {
+                Cv2.ApplyColorMap(resized, colored, ColormapTypes.Turbo);
+            }
 
             return colored.ToBytes(".bmp");
         }
@@ -364,7 +444,8 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             using Mat sum = b + g + r;
             // Hozzáadunk egy picit, hogy ne osszunk nullával
-            using Mat sumSafe = sum + new Scalar(0.001);
+            using Mat sumSafe = new Mat();
+            Cv2.Add(sum, new Scalar(0.001, 0.001, 0.001), sumSafe);
 
             // Kiszámoljuk a kisbetűs r, g, b értékeket (0..1 között lesznek)
             using Mat rNorm = r / sumSafe;
@@ -374,7 +455,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             foreach (var c in channels) c.Dispose(); //nincs szukseg a csatornakra mar
 
             // Az eredményt tároló mátrix
-            Mat result = new Mat(original.Size(), MatType.CV_32F);
+            Mat result = Mat.Zeros(original.Size(), MatType.CV_32F);
             switch (type)
             {
                 case VegetationIndex.ExG:
@@ -404,7 +485,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                             Cv2.Divide(num, denSafe, result);
                         }
                     }
-                    Cv2.PatchNaNs(result, 0);
+                    Cv2.PatchNaNs(result, 0.0);
 
                     // 2. Kiugró értékek levágása 
                     Cv2.Threshold(result, result, 1.0, 1.0, ThresholdTypes.Trunc);
@@ -422,6 +503,8 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     using (Mat num = gNorm - rNorm)
                     using (Mat den = gNorm + rNorm)
                         Cv2.Divide(num, den, result);
+                    Cv2.PatchNaNs(result, 0.0);
+
                     break;
 
                 case VegetationIndex.GLI:
@@ -432,6 +515,8 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     using (Mat den1 = g2 + rNorm)
                     using (Mat den = den1 + bNorm)
                         Cv2.Divide(num, den, result);
+                    Cv2.PatchNaNs(result, 0.0);
+
                     break;
 
                 case VegetationIndex.TGI:
@@ -457,6 +542,8 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                             {
                                 Cv2.Divide(num, safeDen, result);
                             }
+                            Cv2.PatchNaNs(result, 0.0);
+
                         }
                     }
                     break;
@@ -491,6 +578,8 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
 
 
+            // Use cached morph kernel for blob filtering / morphology
+            EnsureMorphKernel();
             FilterSmallBlobs(preMask, 200);
 
 
@@ -511,7 +600,6 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             labChannels[2].Dispose();
             using Mat bgMask = new();
             Cv2.BitwiseNot(preMask, bgMask);
-
             Cv2.MeanStdDev(channelA, out Scalar meanPlant, out Scalar stdPlant, preMask);
             Cv2.MeanStdDev(channelA, out Scalar meanBg, out Scalar stdBg, bgMask);
 
@@ -533,8 +621,15 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
 
             FilterSmallBlobs(finalMask, 300);
-            using Mat kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
-            Cv2.MorphologyEx(finalMask, finalMask, MorphTypes.Close, kernel);
+            if (morphKernel != null)
+            {
+                Cv2.MorphologyEx(finalMask, finalMask, MorphTypes.Close, morphKernel);
+            }
+            else
+            {
+                using Mat kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
+                Cv2.MorphologyEx(finalMask, finalMask, MorphTypes.Close, kernel);
+            }
 
             return finalMask;
         }
@@ -591,6 +686,41 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             original.CopyTo(cropped, roiMask);
 
             return cropped;
+        }
+
+        private void EnsureTurboLUT()
+        {
+            if (turboLUT != null) return;
+            lock (initLock)
+            {
+                if (turboLUT != null) return;
+                try
+                {
+                    // Cv2.LUT elvárja: 256 sor, 1 oszlop (nem 1×256!)
+                    using Mat gray = new Mat(256, 1, MatType.CV_8U); // ← JAVÍTVA
+                    for (int i = 0; i < 256; i++) gray.Set<byte>(i, 0, (byte)i);
+                    using Mat colored = new Mat();
+                    Cv2.ApplyColorMap(gray, colored, ColormapTypes.Turbo);
+                    turboLUT = colored.Clone(); // Most már 256×1×3 → helyes!
+                }
+                catch { turboLUT = null; }
+            }
+        }
+        private void EnsureMorphKernel()
+        {
+            if (morphKernel != null) return;
+            lock (initLock)
+            {
+                if (morphKernel != null) return;
+                try
+                {
+                    morphKernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
+                }
+                catch
+                {
+                    morphKernel = null;
+                }
+            }
         }
     }
 }

@@ -72,8 +72,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         [ObservableProperty]
         private string statusMessage = "Ready";
 
-        [ObservableProperty]
-        private double minThreshold = 0.0;
+
 
         [ObservableProperty]
         private double maxThreshold = 1.0;
@@ -87,6 +86,12 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
         [ObservableProperty]
         private double sliderStep = 0.01;
+
+        [ObservableProperty]
+        private bool useFixedScale = false;
+
+        [ObservableProperty]
+        private double roiMargin = 0.05;
 
         [ObservableProperty]
         private string hotspotPercentageText = "Affected area: 0.00%";
@@ -158,7 +163,15 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                 }
             });
         }
+        partial void OnUseFixedScaleChanged(bool value)
+        {
+            imageProcessor.UseFixedScale = value;
+        }
 
+        partial void OnRoiMarginChanged(double value)
+        {
+            imageProcessor.RoiMargin = value;
+        }
         private async Task DebouncedProcessAsync()
         {
             // 1. Ha már fut egy visszaszámláló (mert a felhasználó épp vadul húzza a csúszkát), lelőjük!
@@ -216,7 +229,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
             cameraService.Start(file.Path.LocalPath);
         }
-        
+
         private async void OnFrameCaptured(object? sender, Mat frame)
         {
             // Ha épp dolgozunk egy előző képen, ezt eldobjuk (hogy ne akadjon a UI)
@@ -232,8 +245,8 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             {
                 using (frame)
                 {
-                    var result = await imageProcessor.ProcessImageAsync(frame, MinThreshold, MaxThreshold, IsHotspotFilterEnabled, SelectedIndex);
-                    
+                    var result = await imageProcessor.ProcessImageAsync(frame, MaxThreshold, IsHotspotFilterEnabled, SelectedIndex);
+
                     try
                     {
                         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -243,7 +256,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                                 OriginalImage = ConvertBytesToBitmap(frame.ToBytes());
                                 ProcessedImage = ConvertBytesToBitmap(result.ProcessedImageBytes);
                                 var s = result.Statistics;
-                                StatisticsText = $"LIVE: {s.VegetationIndexName}\n" +
+                                StatisticsText = $"LIVE: {s.VegetationIndexName} | " +
                                                  $"Mean: {s.ViMean:F2} | Cover: {s.PlantAreaPercentage:F1}%";
 
                                 lastResult = result;
@@ -288,13 +301,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
 
 
         }
-        async partial void OnMinThresholdChanged(double value)
-        {
-            if (!string.IsNullOrEmpty(currentFilePath))
-            {
-                await DebouncedProcessAsync();
-            }
-        }
+
         async partial void OnMaxThresholdChanged(double value)
         {
             if (!string.IsNullOrEmpty(currentFilePath))
@@ -306,7 +313,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         {
             if (!string.IsNullOrEmpty(currentFilePath))
             {
-                
+
                 await ProcessCurrentFileAsync();
 
             }
@@ -370,7 +377,14 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                 IsProcessing = false;
             }
         }
-
+        [RelayCommand]
+        private async Task ApplyChanges()
+        {
+            if (!string.IsNullOrEmpty(currentFilePath))
+            {
+                await ProcessCurrentFileAsync();
+            }
+        }
 
         [RelayCommand]
         private async Task LoadImageAsync()
@@ -428,7 +442,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             {
                 try
                 {
-                    result = await imageProcessor.ProcessImageAsync(currentFilePath, MinThreshold, MaxThreshold, IsHotspotFilterEnabled, SelectedIndex);
+                    result = await imageProcessor.ProcessImageAsync(currentFilePath, MaxThreshold, IsHotspotFilterEnabled, SelectedIndex);
                     StatusMessage = $"Image processed with {SelectedIndex}";
                 }
                 catch (Exception ex)
