@@ -121,21 +121,26 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
 
             // SATU: Ha túl homogén a kép, szétnyitjuk a skálát az átlag körül
             var s = FixedScales[indexType];
-
-            // Fix módhoz: kemény határok
-            // Dinamikus módhoz: puha határok + stabilizátor
-            currentMin = Math.Max(currentMin, s.SoftDead);
-            currentMax = Math.Min(currentMax, s.SoftHealthy);
-
+            // 1. LÉPÉS: SATU
             if (currentMax - currentMin < s.MinRange)
             {
-                double center = (currentMax + currentMin) / 2.0;
-                currentMin = center - s.MinRange / 2.0;
-                currentMax = center + s.MinRange / 2.0;
+                currentMin = currentMean - (s.MinRange / 2.0);
+                currentMax = currentMean + (s.MinRange / 2.0);
             }
 
-            currentMin = Math.Max(currentMin, s.SoftDead);
-            currentMax = Math.Min(currentMax, s.SoftHealthy);
+            // 2. LÉPÉS: TOLÁS
+            if (currentMax > s.SoftHealthy)
+            {
+                currentMax = s.SoftHealthy;
+                if (currentMax - currentMin < s.MinRange) currentMin = currentMax - s.MinRange;
+            }
+            if (currentMin < s.SoftDead)
+            {
+                currentMin = s.SoftDead;
+                if (currentMax - currentMin < s.MinRange) currentMax = currentMin + s.MinRange;
+            }
+
+            if (currentMin >= currentMax) currentMax = currentMin + 0.001;
 
             // ==========================================
             // 3. VIDEÓ SIMÍTÁS (A lusta skála)
@@ -192,7 +197,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             rawIndexMap.ConvertTo(normalizedIndexMap, MatType.CV_8U, alphaScale, betaShift);
 
             // 4. Színek megfordítása (Hogy a beteg/alacsony érték legyen a PIROS Hotspot)
-            using Mat invertedNormalized = new Mat();
+            using Mat invertedNormalized = Mat.Zeros(rawIndexMap.Size(), MatType.CV_8U);
             Cv2.Subtract(new Scalar(255), normalizedIndexMap, invertedNormalized, plantMask);
 
             // 5. Végleges hőtérkép
