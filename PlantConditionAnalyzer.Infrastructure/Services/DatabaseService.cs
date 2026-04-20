@@ -56,5 +56,15 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             context.Snapshots.Add(snapshot);
             await context.SaveChangesAsync();
         }
+        public async Task DeleteSnapshotAsync(int id)
+        {
+            using var context = new AppDbContext();
+            var snap = await context.Snapshots.FindAsync(id);
+            if (snap != null)
+            {
+                context.Snapshots.Remove(snap);
+                await context.SaveChangesAsync();
+            }
+        }
     }
 }

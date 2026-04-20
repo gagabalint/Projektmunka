@@ -27,6 +27,8 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
     public partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         #region fields and props
+        public HistoryViewModel HistoryViewModel { get; }
+
         private readonly IImageProcessingService imageProcessor;
         private readonly IDatabaseService databaseService;
         private readonly ICameraService cameraService;
@@ -139,7 +141,9 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             var legendBytes = imageProcessor.GenerateColormapLegend();
             ColormapLegend = ConvertBytesToBitmap(legendBytes);
 
-            LoadProjectsAsync().GetAwaiter();
+            HistoryViewModel = new HistoryViewModel(databaseService);
+            _ = HistoryViewModel.LoadAsync();
+            _ = LoadProjectsAsync();
         }
 
         // EZ FOG LEFUTNI, AMIKOR A SERVICE "KIABÁL"

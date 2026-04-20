@@ -16,5 +16,6 @@ namespace PlantConditionAnalyzer.Core.Interfaces
         Task DeleteCaptureSetAsync(int id);
         Task SaveSnapshotAsync(Snapshot snapshot);
         Task<List<Snapshot>> GetSnapshotsForSetAsync(int captureSetId);
+        Task DeleteSnapshotAsync(int id);
     }
 }

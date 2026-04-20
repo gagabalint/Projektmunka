@@ -5,6 +5,7 @@
 		xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
 		mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
 		x:Class="PlantConditionAnalyzer.AvaloniaApp.Views.MainWindow"
+		xmlns:views="using:PlantConditionAnalyzer.AvaloniaApp.Views"
 		x:DataType="vm:MainWindowViewModel"
 		Icon="/Assets/avalonia-logo.ico"
 		Title="Plant Condition Analyzer">
@@ -12,128 +13,134 @@
 	<Design.DataContext>
 		<vm:MainWindowViewModel/>
 	</Design.DataContext>
+	<TabControl>
+		<TabItem Header="Analysis">
+			<Grid RowDefinitions="Auto, *, Auto">
+				<Border Grid.Row="0"
+						Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+						BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+						BorderThickness="0 0 0 1"
+						Padding="10">
 
-	<Grid RowDefinitions="Auto, *, Auto">
-		<Border Grid.Row="0"
-				Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-				BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-				BorderThickness="0 0 0 1"
-				Padding="10">
+					<Grid ColumnDefinitions="*, Auto">
 
-			<Grid ColumnDefinitions="*, Auto">
+						<WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
 
-				<WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-
-					<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
-						<TextBlock Text="Project:" VerticalAlignment="Center" FontWeight="Bold"/>
-						<ComboBox ItemsSource="{Binding Projects}"
-								  SelectedItem="{Binding SelectedProject}"
-								  DisplayMemberBinding="{Binding Name}"
-								  Width="150"
-								  PlaceholderText="Select Project..."/>
-						<TextBox Text="{Binding NewProjectName}" Watermark="New Name" Width="120"/>
-						<Button Content="+" Command="{Binding CreateProjectCommand}"/>
-					</StackPanel>
-					<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
-
-						<Button Content="Export Project"
-								Command="{Binding ExportCurrentProjectCommand}"
-								IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-								Background="#1976d2" Foreground="White" FontWeight="Bold"
-								ToolTip.Tip="Csak a kiválasztott projekt adatainak kimentése"/>
-
-
-
-					</StackPanel>
-					<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
-						<Button Content="Open Image" Command="{Binding LoadImageCommand}"/>
-						<Button Content="Load Video" Command="{Binding LoadVideoCommand}"/>
-						<Button Content="Toggle Camera" Command="{Binding ToggleCameraCommand}"/>
-						<Button Content="{Binding RecordButtonText}"
-								Command="{Binding ToggleRecordingCommand}"
-								Background="{Binding RecordButtonColor}"
-								Foreground="White" FontWeight="Bold"/>
-					</StackPanel>
-
-					<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
-						<ComboBox ItemsSource="{Binding AvailableIndices}"
-								  SelectedItem="{Binding SelectedIndex}"
-								  Width="100"/>
-
-						<Button Content="Save Result"
-								Command="{Binding SaveMeasurementCommand}"
-								IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-								Background="#2e7d32" Foreground="White" FontWeight="Bold"/>
-					</StackPanel>
-				</WrapPanel>
-
-				<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20" VerticalAlignment="Center">
-					<StackPanel Spacing="4" VerticalAlignment="Center">
-						<Button Content="Apply changes"
-								Command="{Binding ApplyChangesCommand}"
-								 Foreground="White" FontWeight="Bold"/>
-						<CheckBox Content="Fixed Scale"
-								  IsChecked="{Binding UseFixedScale}"
-								  ToolTip.Tip="Fixed: comparable between sessions. Dynamic: highlights relative differences."/>
-
-						<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-							<TextBlock Text="ROI margin:" VerticalAlignment="Center" FontSize="12"/>
-							<Slider Minimum="0" Maximum="0.20"
-									Value="{Binding RoiMargin}"
-									SmallChange="0.01"
-									Width="80"/>
-							<TextBlock Text="{Binding RoiMargin, StringFormat='{}{0:P0}'}"
-									   VerticalAlignment="Center" FontSize="12" Width="35"/>
-						</StackPanel>
-					</StackPanel>
-
-					<StackPanel Spacing="5" VerticalAlignment="Center">
-						<CheckBox Content="Hotspot Filter"
-								  IsChecked="{Binding IsHotspotFilterEnabled}"
-								  FontWeight="Bold"/>
-
-						<StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsHotspotFilterEnabled}">
-
-							<StackPanel><Slider Minimum="{Binding DataMin}"
-												Maximum="{Binding DataMax}"
-												SmallChange="{Binding SliderStep}"
-												Value="{Binding MaxThreshold}" />
-								<TextBlock Text="{Binding HotspotPercentageText}" FontWeight="Bold" Foreground="Red" />
+							<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
+								<TextBlock Text="Project:" VerticalAlignment="Center" FontWeight="Bold"/>
+								<ComboBox ItemsSource="{Binding Projects}"
+										  SelectedItem="{Binding SelectedProject}"
+										  DisplayMemberBinding="{Binding Name}"
+										  Width="150"
+										  PlaceholderText="Select Project..."/>
+								<TextBox Text="{Binding NewProjectName}" Watermark="New Name" Width="120"/>
+								<Button Content="+" Command="{Binding CreateProjectCommand}"/>
 							</StackPanel>
+							<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
+
+								<Button Content="Export Project"
+										Command="{Binding ExportCurrentProjectCommand}"
+										IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+										Background="#1976d2" Foreground="White" FontWeight="Bold"
+										ToolTip.Tip="Csak a kiválasztott projekt adatainak kimentése"/>
+
+
+
+							</StackPanel>
+							<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
+								<Button Content="Open Image" Command="{Binding LoadImageCommand}"/>
+								<Button Content="Load Video" Command="{Binding LoadVideoCommand}"/>
+								<Button Content="Toggle Camera" Command="{Binding ToggleCameraCommand}"/>
+								<Button Content="{Binding RecordButtonText}"
+										Command="{Binding ToggleRecordingCommand}"
+										Background="{Binding RecordButtonColor}"
+										Foreground="White" FontWeight="Bold"/>
+							</StackPanel>
+
+							<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
+								<ComboBox ItemsSource="{Binding AvailableIndices}"
+										  SelectedItem="{Binding SelectedIndex}"
+										  Width="100"/>
+
+								<Button Content="Save Result"
+										Command="{Binding SaveMeasurementCommand}"
+										IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+										Background="#2e7d32" Foreground="White" FontWeight="Bold"/>
+							</StackPanel>
+						</WrapPanel>
+
+						<StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="20" VerticalAlignment="Center">
+							<StackPanel Spacing="4" VerticalAlignment="Center">
+								<Button Content="Apply changes"
+										Command="{Binding ApplyChangesCommand}"
+										Foreground="White" FontWeight="Bold"/>
+								<CheckBox Content="Fixed Scale"
+										  IsChecked="{Binding UseFixedScale}"
+										  ToolTip.Tip="Fixed: comparable between sessions. Dynamic: highlights relative differences."/>
+
+								<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+									<TextBlock Text="ROI margin:" VerticalAlignment="Center" FontSize="12"/>
+									<Slider Minimum="0" Maximum="0.20"
+											Value="{Binding RoiMargin}"
+											SmallChange="0.01"
+											Width="80"/>
+									<TextBlock Text="{Binding RoiMargin, StringFormat='{}{0:P0}'}"
+											   VerticalAlignment="Center" FontSize="12" Width="35"/>
+								</StackPanel>
+							</StackPanel>
+
+							<StackPanel Spacing="5" VerticalAlignment="Center">
+								<CheckBox Content="Hotspot Filter"
+										  IsChecked="{Binding IsHotspotFilterEnabled}"
+										  FontWeight="Bold"/>
+
+								<StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsHotspotFilterEnabled}">
+
+									<StackPanel><Slider Minimum="{Binding DataMin}"
+														Maximum="{Binding DataMax}"
+														SmallChange="{Binding SliderStep}"
+														Value="{Binding MaxThreshold}" />
+										<TextBlock Text="{Binding HotspotPercentageText}" FontWeight="Bold" Foreground="Red" />
+									</StackPanel>
+								</StackPanel>
+							</StackPanel>
+
+							<StackPanel Spacing="2" VerticalAlignment="Center">
+								<TextBlock Text="Scale" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/>
+								<Border BorderBrush="Gray" BorderThickness="1">
+									<Image Source="{Binding ColormapLegend}" Width="120" Height="15" Stretch="Fill"/>
+								</Border>
+								<Grid>
+									<TextBlock Text="High" HorizontalAlignment="Left" FontSize="10"/>
+									<TextBlock Text="Low" HorizontalAlignment="Right" FontSize="10"/>
+								</Grid>
+							</StackPanel>
+
 						</StackPanel>
-					</StackPanel>
+					</Grid>
+				</Border>
 
-					<StackPanel Spacing="2" VerticalAlignment="Center">
-						<TextBlock Text="Scale" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/>
-						<Border BorderBrush="Gray" BorderThickness="1">
-							<Image Source="{Binding ColormapLegend}" Width="120" Height="15" Stretch="Fill"/>
-						</Border>
-						<Grid>
-							<TextBlock Text="High" HorizontalAlignment="Left" FontSize="10"/>
-							<TextBlock Text="Low" HorizontalAlignment="Right" FontSize="10"/>
-						</Grid>
-					</StackPanel>
+				<Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="10">
+					<Border Grid.Column="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
+						<Image Source="{Binding OriginalImage}" Stretch="Uniform"/>
+					</Border>
+					<Border Grid.Column="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
+						<Image Source="{Binding ProcessedImage}" Stretch="Uniform"/>
+					</Border>
+				</Grid>
 
-				</StackPanel>
+				<Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="10">
+					<Grid ColumnDefinitions="*, Auto">
+						<TextBlock Grid.Column="0" Text="{Binding StatisticsText}" FontSize="14" FontWeight="Bold"/>
+
+						<TextBlock Grid.Column="1" Text="{Binding StatusMessage}" FontStyle="Italic" Foreground="Gray"/>
+					</Grid>
+				</Border>
+
 			</Grid>
-		</Border>
-
-		<Grid Grid.Row="1" ColumnDefinitions="*,*" Margin="10">
-			<Border Grid.Column="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
-				<Image Source="{Binding OriginalImage}" Stretch="Uniform"/>
-			</Border>
-			<Border Grid.Column="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" Padding="5" Margin="5">
-				<Image Source="{Binding ProcessedImage}" Stretch="Uniform"/>
-			</Border>
-		</Grid>
-
-		<Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="10">
-			<Grid ColumnDefinitions="*, Auto">
-				<TextBlock Grid.Column="0" Text="{Binding StatisticsText}" FontSize="14" FontWeight="Bold"/>
-
-				<TextBlock Grid.Column="1" Text="{Binding StatusMessage}" FontStyle="Italic" Foreground="Gray"/>
-			</Grid>
-		</Border>
-
-	</Grid>
+		</TabItem>
+		<TabItem Header="History">
+			<views:HistoryView DataContext="{Binding HistoryViewModel}"/>
+		</TabItem>
+	</TabControl>
 </Window>
