@@ -36,17 +36,7 @@
 								<TextBox Text="{Binding NewProjectName}" Watermark="New Name" Width="120"/>
 								<Button Content="+" Command="{Binding CreateProjectCommand}"/>
 							</StackPanel>
-							<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
-
-								<Button Content="Export Project"
-										Command="{Binding ExportCurrentProjectCommand}"
-										IsEnabled="{Binding SelectedProject, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-										Background="#1976d2" Foreground="White" FontWeight="Bold"
-										ToolTip.Tip="Csak a kiválasztott projekt adatainak kimentése"/>
-
-
-
-							</StackPanel>
+							
 							<StackPanel Orientation="Horizontal" Spacing="5" Margin="0,5,15,5" VerticalAlignment="Center">
 								<Button Content="Open Image" Command="{Binding LoadImageCommand}"/>
 								<Button Content="Load Video" Command="{Binding LoadVideoCommand}"/>

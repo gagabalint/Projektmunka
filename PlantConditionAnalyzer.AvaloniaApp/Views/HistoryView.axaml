@@ -5,16 +5,30 @@
              x:Class="PlantConditionAnalyzer.AvaloniaApp.Views.HistoryView"
              x:DataType="vm:HistoryViewModel">
 
-    <Grid ColumnDefinitions="280,*">
+ <!--   <Grid ColumnDefinitions="280,*">
 
-        <!-- Bal panel: projekt + snapshot lista -->
-        <DockPanel Grid.Column="0" Margin="8">
-            <ComboBox DockPanel.Dock="Top"
-                      ItemsSource="{Binding Projects}"
-                      SelectedItem="{Binding SelectedProject}"
-                      DisplayMemberBinding="{Binding Name}"
-                      HorizontalAlignment="Stretch"
-                      Margin="0,0,0,8"/>
+        --><!-- Bal panel: projekt + snapshot lista --><!--
+       <DockPanel Grid.Column="0" Margin="8">
+            
+            <StackPanel DockPanel.Dock="Top" Spacing="5" Margin="0,0,0,8">
+                <ComboBox ItemsSource="{Binding Projects}"
+                          SelectedItem="{Binding SelectedProject}"
+                          DisplayMemberBinding="{Binding Name}"
+                          HorizontalAlignment="Stretch"/>
+                
+                <Grid ColumnDefinitions="*, *">
+                    <Button Grid.Column="0" Content="Open Videos" 
+                            Command="{Binding OpenRecordingsFolderCommand}"
+                            IsEnabled="{Binding SelectedProject, Converter={x:Static ObjectConverters.IsNotNull}}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,0,2,0"/>
+                    
+                    <Button Grid.Column="1" Content="Delete Project" 
+                            Command="{Binding DeleteProjectCommand}"
+                            IsEnabled="{Binding SelectedProject, Converter={x:Static ObjectConverters.IsNotNull}}"
+                            Background="#c62828" Foreground="White" 
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="2,0,0,0"/>
+                </Grid>
+            </StackPanel>
 
             <Button DockPanel.Dock="Bottom"
                     Content="Delete snapshot"
@@ -39,7 +53,7 @@
             </ListBox>
         </DockPanel>
 
-        <!-- Jobb panel: kép + adatok + diagram -->
+        --><!-- Jobb panel: kép + adatok + diagram --><!--
         <Grid Grid.Column="1" RowDefinitions="*,Auto,200" Margin="8">
 
             <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
@@ -57,5 +71,93 @@
 
 <views:LineChart x:Name="LineChart" Grid.Row="2" Height="200"/>
         </Grid>
+    </Grid>
+</UserControl>-->
+<Grid>
+        
+        <Grid ColumnDefinitions="280,*">
+
+            <DockPanel Grid.Column="0" Margin="8">
+        
+                <StackPanel DockPanel.Dock="Top" Spacing="5" Margin="0,0,0,8">
+                    <ComboBox ItemsSource="{Binding Projects}"
+                              SelectedItem="{Binding SelectedProject}"
+                              DisplayMemberBinding="{Binding Name}"
+                              HorizontalAlignment="Stretch"/>
+
+                    <UniformGrid Columns="3">
+                        <Button Content="Videos" 
+                                Command="{Binding OpenRecordingsFolderCommand}"
+                                IsEnabled="{Binding SelectedProject, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,0,2,0"/>
+                        <Button Content="Export" 
+                                Command="{Binding ExportCurrentProjectCommand}"
+                                IsEnabled="{Binding SelectedProject, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                Background="#1976d2" Foreground="White" 
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="2,0,2,0"/>
+                        <Button Content="Delete" 
+                                Command="{Binding DeleteProjectCommand}"
+                                IsEnabled="{Binding SelectedProject, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                Background="#c62828" Foreground="White" 
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="2,0,0,0"/>
+                    </UniformGrid>
+                </StackPanel>
+
+                <Button DockPanel.Dock="Bottom"
+                        Content="Delete snapshot"
+                        Command="{Binding DeleteSnapshotCommand}"
+                        IsEnabled="{Binding SelectedSnapshot, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        Background="#c62828" Foreground="White"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,8,0,0"/>
+
+                <ListBox ItemsSource="{Binding Snapshots}"
+                         SelectedItem="{Binding SelectedSnapshot}">
+                     <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:yyyy.MM.dd HH:mm}'}" FontWeight="Bold"/>
+                                <TextBlock Text="{Binding ViMean, StringFormat='Mean: {0:F3}'}" FontSize="11" Opacity="0.7"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <Grid Grid.Column="1" RowDefinitions="*,Auto,200" Margin="8">
+                <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1">
+                    <Image Source="{Binding SnapshotImage}" Stretch="Uniform"/>
+                </Border>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="20" Margin="0,8">
+                     <TextBlock Text="{Binding SelectedSnapshot.VegetationIndexName, StringFormat='Index: {0}'}"/>
+                    <TextBlock Text="{Binding SelectedSnapshot.ViMean, StringFormat='Mean: {0:F4}'}"/>
+                    <TextBlock Text="{Binding SelectedSnapshot.ViStdDev, StringFormat='StdDev: {0:F4}'}"/>
+                    <TextBlock Text="{Binding SelectedSnapshot.PlantAreaPercentage, StringFormat='Area: {0:F1}%'}"/>
+                    <TextBlock Text="{Binding SelectedSnapshot.Timestamp, StringFormat='{}{0:yyyy.MM.dd HH:mm:ss}'}"/>
+                 </StackPanel>
+
+                <views:LineChart x:Name="LineChart" Grid.Row="2" Height="200"/>
+                
+                <TextBlock Grid.Row="1" HorizontalAlignment="Right" Text="{Binding StatusMessage}" FontStyle="Italic" Foreground="Gray"/>
+            </Grid>
+        </Grid>
+
+        <Grid IsVisible="{Binding IsDeleteConfirmVisible}" Background="#80000000" ZIndex="100">
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" BorderThickness="1" 
+                    CornerRadius="5" Padding="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="15">
+                    <TextBlock Text="Are you sure you want to delete this project?" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center"/>
+                    <TextBlock Text="This will permanently delete all measurements, images, and videos." Foreground="Red" HorizontalAlignment="Center"/>
+                    
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10" Margin="0,10,0,0">
+                        <Button Content="Yes, delete it" Command="{Binding ConfirmDeleteProjectCommand}" Background="#c62828" Foreground="White" Width="120" HorizontalContentAlignment="Center"/>
+                        <Button Content="Cancel" Command="{Binding CancelDeleteCommand}" Width="100" HorizontalContentAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
     </Grid>
 </UserControl>

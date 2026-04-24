@@ -144,6 +144,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             HistoryViewModel = new HistoryViewModel(databaseService);
             _ = HistoryViewModel.LoadAsync();
             _ = LoadProjectsAsync();
+            
         }
 
         // EZ FOG LEFUTNI, AMIKOR A SERVICE "KIABÁL"
@@ -332,6 +333,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             SelectedProject = newSet;
             NewProjectName = string.Empty;
             StatusMessage = $"Project {newSet.Name} successfully created";
+            _ = HistoryViewModel.LoadAsync();
         }
 
         [RelayCommand]
@@ -369,6 +371,14 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                     snapshot.CaptureSetId = SelectedProject.Id;
                     await databaseService.SaveSnapshotAsync(snapshot);
                     StatusMessage = "Measurment saved succesfully";
+                    // Ha a History fülön is pont ez a projekt van kiválasztva, frissítjük a képeket!
+                    if (HistoryViewModel.SelectedProject?.Id == SelectedProject.Id)
+                    {
+                        // Ezzel kikényszerítjük, hogy újra lekérdezze az adatbázist
+                        var temp = HistoryViewModel.SelectedProject;
+                        HistoryViewModel.SelectedProject = null;
+                        HistoryViewModel.SelectedProject = temp;
+                    }
                 }
 
             }
@@ -420,20 +430,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             StatusMessage = $"Image processed with {SelectedIndex}";
         }
 
-        [RelayCommand]
-        private async Task ExportCurrentProject()
-        {
-            if (SelectedProject == null || string.IsNullOrEmpty(SelectedProject.Name)) return;
-            try
-            {
-                StatusMessage = $"Export in progress ({SelectedProject.Name})";
-                var query = await databaseService.GetSnapshotsForSetAsync(SelectedProject.Id);
-                if (!query.Any())
-                { StatusMessage = $"No saved data found in {SelectedProject.Name}"; return; }
-                CsvWriter(query);
-            }
-            catch (Exception ex) { StatusMessage = $"Error in export process: {ex.Message}"; }
-        }
+        
         private async Task ProcessCurrentFileAsync()
         {
             if (string.IsNullOrEmpty(currentFilePath)) return;
@@ -504,37 +501,6 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
             return files.Count > 0 ? files[0] : null;
         }
 
-        private void CsvWriter(List<Snapshot> query)
-        {
-            string exportFolder = Path.Combine(appPath, "Exports");
-            if (!Directory.Exists(exportFolder))
-            {
-                Directory.CreateDirectory(exportFolder);
-            }
-            string setPath = Path.Combine(exportFolder, SelectedProject!.Name);
-            if (!Directory.Exists(setPath))
-            {
-                Directory.CreateDirectory(setPath);
-            }
-            string fileName = $"{SelectedProject!.Name}_Export_{DateTime.Now:yyyyMMdd_HHmm}.csv";
-            string filePath = Path.Combine(setPath, fileName);
-
-            // 5. Fájlba írás
-            using (StreamWriter sw = new StreamWriter(filePath, false, Encoding.UTF8))
-            {
-                sw.WriteLine("ID;Date;Index Type;Avg;Dev;Plant Area(%)");
-
-                foreach (var snap in query)
-                {
-                    string date = snap.Timestamp.ToString("yyyy.MM.dd HH:mm:ss");
-                    string mean = snap.ViMean.ToString("F10");
-                    string std = snap.ViStdDev.ToString("F10");
-                    string area = snap.PlantAreaPercentage.ToString("F2");
-
-                    sw.WriteLine($"{snap.Id};{date};{snap.VegetationIndexName};{mean};{std};{area}");
-                }
-            }
-            StatusMessage = $"Succesful export: {fileName}";
-        }
+       
     }
 }
