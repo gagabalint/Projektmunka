@@ -12,7 +12,7 @@ namespace PlantConditionAnalyzer.Core.Interfaces
 {
     public record HotspotData(double Min, double Max, double Step, double SickPercentage);
 
-    public interface IImageProcessingService
+    public interface IImageProcessingService:IDisposable
     {
         bool IsRecording { get; }
         bool UseFixedScale { get; set; }

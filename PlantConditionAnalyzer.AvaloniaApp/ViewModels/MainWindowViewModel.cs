@@ -289,6 +289,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         public void Dispose()
         {
             cameraService.Stop();
+            imageProcessor.Dispose();
         }
 
         private async Task LoadProjectsAsync()

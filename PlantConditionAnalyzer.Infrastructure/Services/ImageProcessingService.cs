@@ -10,7 +10,7 @@ using System.Text;
 using System.Threading.Tasks;
 namespace PlantConditionAnalyzer.Infrastructure.Services
 {
-    public class ImageProcessingService : IImageProcessingService
+    public class ImageProcessingService : IImageProcessingService, IDisposable
     {
         public bool IsRecording { get; private set; } = false;
         private VideoWriter? videoWriter;
@@ -22,6 +22,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         private Mat? morphKernel;
 
         // Mozgóátlag változói a villódzás ellen
+        private bool disposed = false;
         private bool isFirstFrame = true;
         private double smoothedMin = 0.0;
         private double smoothedMax = 0.0;
@@ -726,6 +727,18 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                     morphKernel = null;
                 }
             }
+        }
+
+        public void Dispose()
+        {
+            if (disposed) return;
+
+            turboLUT?.Dispose();
+            morphKernel?.Dispose();
+            videoWriter?.Release();
+            videoWriter?.Dispose();
+
+            disposed = true;
         }
     }
 }

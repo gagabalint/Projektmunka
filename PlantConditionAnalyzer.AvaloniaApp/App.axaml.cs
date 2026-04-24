@@ -10,6 +10,7 @@ using PlantConditionAnalyzer.Core.Interfaces;
 using PlantConditionAnalyzer.Infrastructure.Services;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace PlantConditionAnalyzer.AvaloniaApp
 {
@@ -29,15 +30,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp
             Services = services.BuildServiceProvider();
 
 
-            try
-            {
-                var dbService = Services.GetRequiredService<IDatabaseService>();
-                dbService.InitializeAsync().GetAwaiter().GetResult(); // megvarjuk amig betolti a dbt
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"FATAL ERROR: Database init failed: {ex.Message}");
-            }
+          
 
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -57,8 +50,20 @@ namespace PlantConditionAnalyzer.AvaloniaApp
            
 
             base.OnFrameworkInitializationCompleted();
+            _ = InitializeAsync(); 
         }
-
+        private async Task InitializeAsync()
+        {
+            try
+            {
+                var dbService = Services.GetRequiredService<IDatabaseService>();
+                await dbService.InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"FATAL ERROR: Database init failed: {ex.Message}");
+            }
+        }
         private void ConfigureServices(IServiceCollection services)
         {
             services.AddSingleton<IImageProcessingService, ImageProcessingService>();
