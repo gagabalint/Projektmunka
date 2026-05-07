@@ -15,7 +15,7 @@ namespace PlantConditionAnalyzer.Core.Interfaces
     public interface IImageProcessingService:IDisposable
     {
         bool IsRecording { get; }
-        bool UseFixedScale { get; set; }
+        bool IsZScoreOn { get; set; }
         double RoiMargin { get; set; }
         Task<ProcessingResult> ProcessImageAsync(string imagePath,  double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex vegetationIndex=VegetationIndex.ExG );
         Task<ProcessingResult> ProcessImageAsync(Mat frame,  double maxThreshold, bool isHotspotFilterEnabled, VegetationIndex vegetationIndex=VegetationIndex.ExG);

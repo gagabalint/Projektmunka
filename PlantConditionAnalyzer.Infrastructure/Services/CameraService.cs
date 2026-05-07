@@ -102,7 +102,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
                 }
 
                 // Kb. 30 FPS 
-                Thread.Sleep(15);
+                Thread.Sleep(33);
             }
         }
 

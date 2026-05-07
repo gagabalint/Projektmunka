@@ -36,7 +36,6 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         private string? currentFilePath;
         private string appPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "PlantConditionAnalyzer");
 
-        private bool isProcessingFrame = false;//overload vedelem
         private int frameCounter = 0;
         private CancellationTokenSource? thresholdDebounceCts;
 
@@ -90,7 +89,7 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
         private double sliderStep = 0.01;
 
         [ObservableProperty]
-        private bool useFixedScale = false;
+        private bool isZScoreOn = false;
 
         [ObservableProperty]
         private double roiMargin = 0.05;
@@ -168,9 +167,9 @@ namespace PlantConditionAnalyzer.AvaloniaApp.ViewModels
                 }
             });
         }
-        partial void OnUseFixedScaleChanged(bool value)
+        partial void OnIsZScoreOnChanged(bool value)
         {
-            imageProcessor.UseFixedScale = value;
+            imageProcessor.IsZScoreOn = value;
         }
 
         partial void OnRoiMarginChanged(double value)

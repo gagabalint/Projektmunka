@@ -762,36 +762,6 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             }
         }
 
-        //private void GetPercentiles(Mat src, double pLow, double pHigh, out double low, out double high, Mat? mask = null)
-        //{
-        //    low = 0.0;
-        //    high = 0.0;
-
-        //    // Összegyűjtjük a maszk alatti értékeket (float)
-        //    Mat masked = new Mat();
-        //    if (mask != null)
-        //        src.CopyTo(masked, mask);
-        //    else
-        //        masked = src.Clone();
-
-        //    int total = (int)masked.Total();
-        //    if (total == 0) return;
-
-        //    using Mat flat = masked.Reshape(1, total);
-        //    float[] values = new float[total];
-        //    Marshal.Copy(flat.Data, values, 0, total);
-        //    Array.Sort(values);
-
-        //    int idxLow = (int)(total * pLow);
-        //    int idxHigh = (int)(total * pHigh);
-        //    idxLow = Math.Clamp(idxLow, 0, total - 1);
-        //    idxHigh = Math.Clamp(idxHigh, 0, total - 1);
-
-        //    low = values[idxLow];
-        //    high = values[idxHigh];
-        //}
-
-
         //histogram alapú percentilis számítás, hogy ne kelljen minden pixelt egyesével beolvasni és rendezni
         private void GetPercentiles(Mat src, double pLow, double pHigh,
             out double low, out double high, Mat? mask = null, int bins = 1024)

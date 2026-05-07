@@ -64,8 +64,8 @@
 								<Button Content="Apply changes"
 										Command="{Binding ApplyChangesCommand}"
 										Foreground="White" FontWeight="Bold"/>
-								<CheckBox Content="Fixed Scale"
-										  IsChecked="{Binding UseFixedScale}"
+								<CheckBox Content="Z Score Mode"
+										  IsChecked="{Binding IsZScoreOn}"
 										  ToolTip.Tip="Fixed: comparable between sessions. Dynamic: highlights relative differences."/>
 
 								<StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

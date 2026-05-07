@@ -5,6 +5,7 @@
 .vs
 .vscode/
 .idea/
+Validation/
 
 # User-specific files
 *.suo

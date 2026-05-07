@@ -101,7 +101,45 @@ namespace PlantConditionAnalyzer.Validation
                         continue;
                     }
 
-                    using Mat predicted = GetSegmentationMask(original);
+                    // Downscale large images (keep aspect) - if max dimension > 900px
+                    bool wasDownscaled = false;
+                    double scale = 1.0;
+                    using Mat procImage = new Mat();
+                    {
+                        int maxDim = Math.Max(original.Width, original.Height);
+                        if (maxDim > 700)
+                        {
+                            wasDownscaled = true;
+                            scale = 700.0 / maxDim;
+                            var newSize = new Size((int)Math.Round(original.Width * scale), (int)Math.Round(original.Height * scale));
+                            Cv2.Resize(original, procImage, newSize, 0, 0, InterpolationFlags.Area);
+                        }
+                        else
+                        {
+                            original.CopyTo(procImage);
+                        }
+                    }
+
+                    // Run the actual segmentation process (ExG + LAB) on the possibly downscaled image
+                    using Mat predictedSmall = GetSegmentationMask(procImage);
+
+                    // If we downscaled, resize predicted mask back to original size for metric comparision
+                    using Mat predicted = new Mat();
+                    if (wasDownscaled)
+                    {
+                        Cv2.Resize(predictedSmall, predicted, new Size(original.Width, original.Height), 0, 0, InterpolationFlags.Nearest);
+                    }
+                    else
+                    {
+                        predictedSmall.CopyTo(predicted);
+                    }
+
+                    // Validate predicted mask size with ground truth
+                    if (groundTruth.Size() != predicted.Size())
+                    {
+                        Console.WriteLine($"Warning: size mismatch for {fileName} - GT: {groundTruth.Size()}, Pred: {predicted.Size()}");
+                        Cv2.Resize(predicted, predicted, groundTruth.Size(), 0, 0, InterpolationFlags.Nearest);
+                    }
 
                     var result = CalculateMetrics(groundTruth, predicted, fileName);
                     results.Add(result);
@@ -307,21 +345,21 @@ namespace PlantConditionAnalyzer.Validation
 
             // 1. Original (bal felső)
             original.CopyTo(canvas[new Rect(0, 0, w, h)]);
-            Cv2.PutText(canvas, "Original", new Point(10, 30),
+            Cv2.PutText(canvas, "Eredeti", new Point(10, h-30),
                 HersheyFonts.HersheySimplex, 1.0, new Scalar(255, 255, 255), 2);
 
             // 2. Ground Truth (jobb felső)
             using Mat gtColor = new Mat();
             Cv2.CvtColor(gt, gtColor, ColorConversionCodes.GRAY2BGR);
             gtColor.CopyTo(canvas[new Rect(w, 0, w, h)]);
-            Cv2.PutText(canvas, "Ground Truth", new Point(w + 10, 30),
+            Cv2.PutText(canvas, "Referencia maszk", new Point(w + 10, h-30),
                 HersheyFonts.HersheySimplex, 1.0, new Scalar(255, 255, 255), 2);
 
             // 3. Predicted (bal alsó)
             using Mat predColor = new Mat();
             Cv2.CvtColor(predicted, predColor, ColorConversionCodes.GRAY2BGR);
             predColor.CopyTo(canvas[new Rect(0, h, w, h)]);
-            Cv2.PutText(canvas, "Predicted", new Point(10, h + 30),
+            Cv2.PutText(canvas, "Kimenet", new Point(10, 2*h - 30),
                 HersheyFonts.HersheySimplex, 1.0, new Scalar(255, 255, 255), 2);
 
             // 4. Overlay comparison (jobb alsó)
@@ -351,27 +389,27 @@ namespace PlantConditionAnalyzer.Validation
             overlay.CopyTo(canvas[new Rect(w, h, w, h)]);
 
             // Legend
-            Cv2.PutText(canvas, "Overlay", new Point(w + 10, h + 30),
+            Cv2.PutText(canvas, "Eredmeny osszevetes", new Point(w+10,  2*h - 60),
                 HersheyFonts.HersheySimplex, 1.0, new Scalar(255, 255, 255), 2);
-            Cv2.PutText(canvas, "Green=TP Red=FP Blue=FN", new Point(w + 10, h + 60),
-                HersheyFonts.HersheySimplex, 0.6, new Scalar(255, 255, 255), 1);
+            Cv2.PutText(canvas, "Zold=TP Piros=FP Kek=FN", new Point(w+10, 2*h - 30),
+                HersheyFonts.HersheySimplex, 0.8, new Scalar(255, 255, 255), 2);
 
             // Metrics overlay
             int textY = h * 2 - 120;
-            Cv2.Rectangle(canvas, new Point(10, textY - 10), new Point(500, h * 2 - 10),
+            Cv2.Rectangle(canvas, new Point(w-270, textY - 10), new Point(w, h * 2),
                 new Scalar(0, 0, 0), -1);
 
             string[] metrics = new[]
             {
                 $"IoU: {result.IoU:F4}",
                 $"F1-Score: {result.F1Score:F4}",
-                $"Precision: {result.Precision:F4}",
-                $"Recall: {result.Recall:F4}"
+                $"Precizitas: {result.Precision:F4}",
+                $"Erzekenyseg: {result.Recall:F4}"
             };
 
             for (int i = 0; i < metrics.Length; i++)
             {
-                Cv2.PutText(canvas, metrics[i], new Point(20, textY + 20 + i * 25),
+                Cv2.PutText(canvas, metrics[i], new Point(w-260, textY + 20 + i * 25),
                     HersheyFonts.HersheySimplex, 0.7, new Scalar(255, 255, 255), 2);
             }
 
@@ -391,12 +429,12 @@ namespace PlantConditionAnalyzer.Validation
             Console.WriteLine("\n" + new string('=', 70));
             Console.WriteLine("SEGMENTATION VALIDATION SUMMARY (ExG + LAB)");
             Console.WriteLine(new string('=', 70));
-            Console.WriteLine($"Images processed: {results.Count}");
-            Console.WriteLine($"Average Precision: {avgPrecision:F4} ({avgPrecision * 100:F2}%)");
-            Console.WriteLine($"Average Recall:    {avgRecall:F4} ({avgRecall * 100:F2}%)");
-            Console.WriteLine($"Average F1-Score:  {avgF1:F4}");
-            Console.WriteLine($"Average Accuracy:  {avgAccuracy:F4} ({avgAccuracy * 100:F2}%)");
-            Console.WriteLine($"Average IoU:       {avgIoU:F4} ({avgIoU * 100:F2}%)");
+            Console.WriteLine($"Feldolgozott képek:     {results.Count} db");
+            Console.WriteLine($"Átlagos Precizitás:     {avgPrecision:F4} ({avgPrecision * 100:F2}%)");
+            Console.WriteLine($"Átlagos Érzékenység:    {avgRecall:F4} ({avgRecall * 100:F2}%)");
+            Console.WriteLine($"Átlagos F1-Score:       {avgF1:F4}");
+            Console.WriteLine($"Átlagos Pontosság:      {avgAccuracy:F4} ({avgAccuracy * 100:F2}%)");
+            Console.WriteLine($"Átlagos IoU:            {avgIoU:F4} ({avgIoU * 100:F2}%)");
             Console.WriteLine(new string('=', 70));
 
             // CSV export
