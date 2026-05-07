@@ -6,12 +6,22 @@ using PlantConditionAnalyzer.Core.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+
 namespace PlantConditionAnalyzer.Infrastructure.Services
 {
     public class ImageProcessingService : IImageProcessingService, IDisposable
     {
+
+
+
+        public bool IsZScoreOn { get; set; } = false;
+        private int adaptiveFrameCounter = 0;
+        private double cachedP5 = 0.0, cachedP95 = 0.0, cachedP01 = 0.0, cachedP99 = 0.0;
+        private const int PERCENTILE_UPDATE_INTERVAL = 10;   // minden 10. kockán újraszámol
+
         public bool IsRecording { get; private set; } = false;
         private VideoWriter? videoWriter;
         string setName = string.Empty;
@@ -28,19 +38,9 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         private double smoothedMax = 0.0;
         private DateTime lastFrameTime = DateTime.MinValue; // EZ FOGJA AUTO-RESETELNI A KAMERÁT!
         private readonly object initLock = new();
-        public bool UseFixedScale { get; set; } = false;
         public double RoiMargin { get; set; } = 0.05;
 
-        private static readonly Dictionary<VegetationIndex, (double Dead, double Healthy, double SoftDead, double SoftHealthy, double MinRange)> FixedScales = new()
-            {
-                 { VegetationIndex.NGRDI, (-0.05,  0.20, -0.08,  0.25, 0.10) },
-                 { VegetationIndex.MGRVI, (-0.05,  0.20, -0.08,  0.25, 0.10) },
-                 { VegetationIndex.ExG,   ( 0.05,  0.40,  0.02,  0.55, 0.30) },
-                 { VegetationIndex.ExGR,  ( 0.05,  0.40,  0.02,  0.55, 0.30) },
-                 { VegetationIndex.VARI,  (-0.10,  0.20, -0.15,  0.30, 0.15) },
-                 { VegetationIndex.GLI,   (-0.10,  0.20, -0.15,  0.30, 0.15) },
-                 { VegetationIndex.TGI,   (-0.10,  0.20, -0.15,  0.30, 0.15) },
-            };
+    
         public void ToggleRecording(string projectName)
         {
             if (IsRecording)
@@ -86,15 +86,19 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
         }
         private ProcessingResult ProcessMat(Mat rawOriginal,  double maxThreshold, bool isHotspotFilterEnabled, bool isContinuousStream, VegetationIndex indexType)
         {
+            if (!isContinuousStream)
+            {
+                adaptiveFrameCounter = 0;
+                cachedP5 = cachedP95 = cachedP01 = cachedP99 = 0;
+                isFirstFrame = true;
+                smoothedMin = smoothedMax = 0;
+            }
             double toCut = RoiMargin;
             using Mat original = ApplyROI(rawOriginal, toCut);
 
             using Mat plantMask = GetSegmentationMask(original);
             using Mat rawIndexMap = CalculateIndexImage(original, indexType);
             Cv2.MinMaxLoc(rawIndexMap, out double actualMin, out double actualMax);
-
-            // normalizálás fixált tartománnyal
-            using Mat normalizedIndexMap = new();
 
             using Mat finalMask = new Mat();
 
@@ -116,106 +120,134 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             // ==========================================
             Cv2.MeanStdDev(rawIndexMap, out Scalar mean, out Scalar stddev, plantMask);
             double currentMean = mean.Val0;
-            double currentMin = currentMean - (2.0 * stddev.Val0);
-            double currentMax = currentMean + (2.0 * stddev.Val0);
+            double currentStd = stddev.Val0;
 
-
-            // SATU: Ha túl homogén a kép, szétnyitjuk a skálát az átlag körül
-            var s = FixedScales[indexType];
-            // 1. LÉPÉS: SATU
-            if (currentMax - currentMin < s.MinRange)
-            {
-                currentMin = currentMean - (s.MinRange / 2.0);
-                currentMax = currentMean + (s.MinRange / 2.0);
-            }
-
-            // 2. LÉPÉS: TOLÁS
-            if (currentMax > s.SoftHealthy)
-            {
-                currentMax = s.SoftHealthy;
-                if (currentMax - currentMin < s.MinRange) currentMin = currentMax - s.MinRange;
-            }
-            if (currentMin < s.SoftDead)
-            {
-                currentMin = s.SoftDead;
-                if (currentMax - currentMin < s.MinRange) currentMax = currentMin + s.MinRange;
-            }
-
-            if (currentMin >= currentMax) currentMax = currentMin + 0.001;
-
-            // ==========================================
-            // 3. VIDEÓ SIMÍTÁS (A lusta skála)
-            // ==========================================
             double displayMin, displayMax;
+            Mat? invertedGray = null;
 
-            if (!isContinuousStream)
+            if (!IsZScoreOn)
             {
-                // Statikus képnél nincs simítás
-                displayMin = currentMin;
-                displayMax = currentMax;
-            }
-          /*  else*/ if (UseFixedScale)
-            {
-                displayMin = s.Dead;
-                displayMax = s.Healthy;
-
-            }
-            else
-            {
-                // Kameránál / Videónál mozgóátlag
-                if ((DateTime.Now - lastFrameTime).TotalMilliseconds > 500) isFirstFrame = true;
-                lastFrameTime = DateTime.Now;
-
-                if (isFirstFrame)
+                // --- Percentilisek frissítése (ritkított) ---
+                if (adaptiveFrameCounter % PERCENTILE_UPDATE_INTERVAL == 0 || adaptiveFrameCounter == 0)
                 {
-                    smoothedMin = currentMin; smoothedMax = currentMax; isFirstFrame = false;
+                    GetPercentiles(rawIndexMap, 0.05, 0.95, out cachedP5, out cachedP95, plantMask);
+                    GetPercentiles(rawIndexMap, 0.01, 0.99, out cachedP01, out cachedP99, plantMask);
+                }
+                adaptiveFrameCounter++;
+
+                // --- Dinamikus minimális tartományszélesség ---
+                double globalRange = cachedP95 - cachedP5;
+                double minRange = Math.Max(0.05, globalRange * 0.2);   // 0.05 az alsó korlát (helyettesíti a régi MinRange-t)
+
+                // --- Kezdeti tartomány [átlag - 2*szórás, átlag + 2*szórás] ---
+                double currentMin = currentMean - 2.0 * currentStd;
+                double currentMax = currentMean + 2.0 * currentStd;
+
+                // --- SATU: kiszélesítés, ha túl szűk ---
+                if (currentMax - currentMin < minRange)
+                {
+                    double half = minRange / 2.0;
+                    currentMin = currentMean - half;
+                    currentMax = currentMean + half;
+                }
+
+                // --- TOLÁS: levágás a p01..p99 közé ---
+                if (currentMin < cachedP01) currentMin = cachedP01;
+                if (currentMax > cachedP99) currentMax = cachedP99;
+
+                // Ha a vágás után is túl szűk, visszaállunk a teljes percentilis tartományra
+                if (currentMax - currentMin < minRange)
+                {
+                    currentMin = cachedP01;
+                    currentMax = cachedP99;
+                }
+
+                // --- Mozgóátlag (villódzás ellen, csak folyamatos stream) ---
+                if (isContinuousStream)
+                {
+                    if ((DateTime.Now - lastFrameTime).TotalMilliseconds > 500) isFirstFrame = true;
+                    lastFrameTime = DateTime.Now;
+
+                    if (isFirstFrame)
+                    {
+                        smoothedMin = currentMin;
+                        smoothedMax = currentMax;
+                        isFirstFrame = false;
+                    }
+                    else
+                    {
+                        double smoothedMid = (smoothedMin + smoothedMax) / 2.0;
+                        double currentMid = (currentMin + currentMax) / 2.0;
+                        double deviation = Math.Abs(currentMid - smoothedMid);
+                        double alpha_ = deviation > 0.05 ? 0.5 : 0.05;
+                        smoothedMin = smoothedMin * (1.0 - alpha_) + currentMin * alpha_;
+                        smoothedMax = smoothedMax * (1.0 - alpha_) + currentMax * alpha_;
+                    }
+                    displayMin = smoothedMin;
+                    displayMax = smoothedMax;
                 }
                 else
                 {
-                    double smoothedMean = (smoothedMax + smoothedMin) / 2.0;
-                    double deviation = Math.Abs(currentMean - smoothedMean);
-                    double alpha = (deviation > 0.05) ? 0.5 : 0.05;
-
-                    smoothedMin = (smoothedMin * (1.0 - alpha)) + (currentMin * alpha);
-                    smoothedMax = (smoothedMax * (1.0 - alpha)) + (currentMax * alpha);
+                    displayMin = currentMin;
+                    displayMax = currentMax;
                 }
-                displayMin = smoothedMin;
-                displayMax = smoothedMax;
+
+                if (displayMax - displayMin < 1e-6) displayMax = displayMin + 1e-6;
+
+                // --- Normalizálás 0..255 ---
+                double alpha = 255.0 / (displayMax - displayMin);
+                double beta = -displayMin * alpha;
+                using Mat norm8 = new Mat();
+                rawIndexMap.ConvertTo(norm8, MatType.CV_8U, alpha, beta);
+
+                // --- Invertálás (piros = beteg) ---
+                invertedGray = new Mat();
+                Cv2.Subtract(new Scalar(255), norm8, invertedGray, plantMask);
+            }
+            else // ZScore mód
+            {
+                if (currentStd < 1e-6) currentStd = 1e-6;
+
+                using Mat zMap = new Mat(rawIndexMap.Size(), MatType.CV_32F);
+                Cv2.Subtract(rawIndexMap, new Scalar(currentMean), zMap);
+                Cv2.Divide(zMap, new Scalar(currentStd), zMap);
+                Cv2.PatchNaNs(zMap, 0.0);
+
+                const double zMin = -3.0;
+                const double zMax = 3.0;
+                double alphaZ = 255.0 / (zMax - zMin);
+                double betaZ = -zMin * alphaZ;
+                using Mat zU8 = new Mat();
+                zMap.ConvertTo(zU8, MatType.CV_8U, alphaZ, betaZ);
+
+                invertedGray = new Mat();
+                Cv2.Subtract(new Scalar(255), zU8, invertedGray, plantMask);
+
+                // A csúszka (maxThreshold) továbbra is a raw index értéken dolgozik
+                // Ehhez a raw index valós min/max kell a statisztikához
+                Cv2.MinMaxLoc(rawIndexMap, out double rawMin, out double rawMax, out Point _, out Point _, plantMask);
+                displayMin = rawMin;
+                displayMax = rawMax;
+                if (displayMax - displayMin < 1e-6) displayMax = displayMin + 1e-6;
             }
 
-            // Biztonsági védelem
-            if (displayMax - displayMin < 0.0001) displayMax = displayMin + 0.0001;
-
             // ==========================================
-            // 4. KONVERTÁLÁS ÉS SZÍNEZÉS
+            // 3. Heatmap előállítása (invertedGray alapján)
             // ==========================================
-            // Kiszámoljuk az átskálázás szorzóit
-            double alphaScale = 255.0 / (displayMax - displayMin);
-            // ... INNEN MEGY TOVÁBB A KÓDOD (betaShift, ConvertTo, stb.) ...
-            double betaShift = -displayMin * alphaScale;
+            if (invertedGray == null)
+                throw new InvalidOperationException("invertedGray cannot be null");
 
-            // A ConvertTo CV_8U esetén automatikusan "levágja" (clamp) a túllógó értékeket 0 és 255-nél!
-            rawIndexMap.ConvertTo(normalizedIndexMap, MatType.CV_8U, alphaScale, betaShift);
-
-            // 4. Színek megfordítása (Hogy a beteg/alacsony érték legyen a PIROS Hotspot)
-            using Mat invertedNormalized = Mat.Zeros(rawIndexMap.Size(), MatType.CV_8U);
-            Cv2.Subtract(new Scalar(255), normalizedIndexMap, invertedNormalized, plantMask);
-
-            // 5. Végleges hőtérkép
             using Mat heatmap = new Mat();
-            // Use a cached LUT (colormap) and apply via LUT to avoid recreating the colormap each frame
             EnsureTurboLUT();
             if (turboLUT != null)
             {
-                // Cv2.LUT requires the source channels to match the LUT channels.
-                // Our LUT is 3-channel (BGR). Convert the single-channel grayscale to 3-channel first.
-                using Mat inverted3 = new Mat();
-                Cv2.CvtColor(invertedNormalized, inverted3, ColorConversionCodes.GRAY2BGR);
-                Cv2.LUT(inverted3, turboLUT, heatmap);
+                using Mat gray3 = new Mat();
+                Cv2.CvtColor(invertedGray, gray3, ColorConversionCodes.GRAY2BGR);
+                Cv2.LUT(gray3, turboLUT, heatmap);
             }
             else
             {
-                Cv2.ApplyColorMap(invertedNormalized, heatmap, ColormapTypes.Turbo);
+                Cv2.ApplyColorMap(invertedGray, heatmap, ColormapTypes.Turbo);
             }
             #region slider
             int plantPixels = Cv2.CountNonZero(plantMask);
@@ -265,7 +297,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             double rows = plantMask.Rows * (1 - 2 * toCut);
             double cols = plantMask.Cols * (1 - 2 * toCut);
 
-
+            invertedGray.Dispose();
 
 
             double wholeArea = rows * cols;
@@ -673,7 +705,7 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             int marginY = (int)(original.Rows * marginPercent);
 
             // Létrehozunk egy fekete maszkot
-            Mat roiMask = Mat.Zeros(original.Size(), MatType.CV_8U);
+         using   Mat roiMask = Mat.Zeros(original.Size(), MatType.CV_8U);
 
             // A közepét fehérre festjük (ez a hasznos terület)
             var roiRect = new Rect(
@@ -686,10 +718,11 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             Cv2.Rectangle(roiMask, roiRect, Scalar.White, -1); // -1 = kitöltés
 
             // 1/1 képméret, tiszta fekete
-            Mat cropped = Mat.Zeros(original.Size(), original.Type());
+         Mat cropped = Mat.Zeros(original.Size(), original.Type());
 
             // Rámásoljuk a megvágott tartalmat 
             original.CopyTo(cropped, roiMask);
+            
 
             return cropped;
         }
@@ -729,6 +762,115 @@ namespace PlantConditionAnalyzer.Infrastructure.Services
             }
         }
 
+        //private void GetPercentiles(Mat src, double pLow, double pHigh, out double low, out double high, Mat? mask = null)
+        //{
+        //    low = 0.0;
+        //    high = 0.0;
+
+        //    // Összegyűjtjük a maszk alatti értékeket (float)
+        //    Mat masked = new Mat();
+        //    if (mask != null)
+        //        src.CopyTo(masked, mask);
+        //    else
+        //        masked = src.Clone();
+
+        //    int total = (int)masked.Total();
+        //    if (total == 0) return;
+
+        //    using Mat flat = masked.Reshape(1, total);
+        //    float[] values = new float[total];
+        //    Marshal.Copy(flat.Data, values, 0, total);
+        //    Array.Sort(values);
+
+        //    int idxLow = (int)(total * pLow);
+        //    int idxHigh = (int)(total * pHigh);
+        //    idxLow = Math.Clamp(idxLow, 0, total - 1);
+        //    idxHigh = Math.Clamp(idxHigh, 0, total - 1);
+
+        //    low = values[idxLow];
+        //    high = values[idxHigh];
+        //}
+
+
+        //histogram alapú percentilis számítás, hogy ne kelljen minden pixelt egyesével beolvasni és rendezni
+        private void GetPercentiles(Mat src, double pLow, double pHigh,
+            out double low, out double high, Mat? mask = null, int bins = 1024)
+        {
+            low = high = 0.0;
+
+            // 1) Minimum és maximum a maszk alatt
+            double minVal, maxVal;
+            if (mask != null)
+                Cv2.MinMaxLoc(src, out minVal, out maxVal, out _, out _, mask);
+            else
+                Cv2.MinMaxLoc(src, out minVal, out maxVal);
+
+            if (maxVal - minVal < 1e-6)
+            {
+                low = high = minVal;
+                return;
+            }
+
+            // 2) Hisztogram tömb (újrahasznosítható – ne allokálj minden kockán)
+            int[] hist = new int[bins];
+            double range = maxVal - minVal;
+
+            // 3) Biztonságos bejárás maszkkal (GetGenericIndexer)
+            Mat masked = new Mat();
+            
+                if (mask != null)
+                    src.CopyTo(masked, mask);
+                else
+                    masked = src.Clone();
+
+                var indexer = masked.GetGenericIndexer<float>();
+                int rows = masked.Rows;
+                int cols = masked.Cols;
+
+                for (int i = 0; i < rows; i++)
+                {
+                    for (int j = 0; j < cols; j++)
+                    {
+                        float val = indexer[i, j];
+                        if (float.IsNaN(val)) continue;
+                        int bin = (int)((val - minVal) / range * (bins - 1));
+                        bin = Math.Clamp(bin, 0, bins - 1);
+                        hist[bin]++;
+                    }
+                }
+            masked.Dispose();
+
+            // 4) Kumulatív összegzés a percentilisekhez
+            long totalPixels = 0;
+            for (int i = 0; i < bins; i++) totalPixels += hist[i];
+            if (totalPixels == 0) return;
+
+            long lowIdx = (long)(totalPixels * pLow);
+            long highIdx = (long)(totalPixels * pHigh);
+
+            long cum = 0;
+            double lowVal = 0.0, highVal = 0.0;
+            bool lowFound = false, highFound = false;
+
+            for (int i = 0; i < bins; i++)
+            {
+                cum += hist[i];
+                if (!lowFound && cum >= lowIdx)
+                {
+                    low = minVal + (double)i / (bins - 1) * range;
+                    lowFound = true;
+                }
+                if (!highFound && cum >= highIdx)
+                {
+                    high = minVal + (double)i / (bins - 1) * range;
+                    highFound = true;
+                    break;
+                }
+            }
+
+            low = Math.Max(low, minVal);
+            high = Math.Min(high, maxVal);
+        }
         public void Dispose()
         {
             if (disposed) return;
